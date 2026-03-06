@@ -1,0 +1,39 @@
+# Environment
+.env
+*.env
+
+# macOS
+.DS_Store
+
+# Telethon session files
+*.session
+*.session-journal
+
+# Runtime data
+signals.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Node / Dashboard
+node_modules/
+dashboard/node_modules/
+dashboard/.next/
+.next/
+
+# ML models
+models/
+*.joblib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

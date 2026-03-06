@@ -1,0 +1,319 @@
+"""
+Real-time runner detection for MadApes Forwarder.
+Multi-timeframe momentum detection with tiered alerts and exit signals.
+"""
+import asyncio
+import html
+import logging
+from datetime import datetime
+
+from config import RUNNER_VELOCITY_MIN, RUNNER_VOL_ACCEL_MIN
+from db import get_signals_for_runner_check, mark_runner_alerted, update_max_tracking
+from madapes.constants import CHAIN_EMOJI_MAP
+from madapes.event_bus import emit
+from madapes.events import RunnerDetected
+from madapes.formatting import safe_float, format_currency, format_price, format_called_time, token_display_label
+from madapes.services.enrichment_service import enrich_token
+from utils import utcnow_naive
+
+logger = logging.getLogger(__name__)
+
+# Runner tier thresholds
+TIER_MOONSHOT_VELOCITY = 5.0    # %/min
+TIER_STRONG_VELOCITY = 3.0     # %/min
+TIER_RUNNER_VELOCITY = RUNNER_VELOCITY_MIN  # default 1.5 %/min
+
+TIER_MOONSHOT_CHANGE = 200.0   # % price change
+TIER_STRONG_CHANGE = 100.0     # %
+
+
+def classify_runner_tier(velocity, price_change_pct, vol_accel):
+    """Classify runner into tiers: moonshot, strong_runner, runner, or None."""
+    if velocity >= TIER_MOONSHOT_VELOCITY or price_change_pct >= TIER_MOONSHOT_CHANGE:
+        return "moonshot"
+    if velocity >= TIER_STRONG_VELOCITY or price_change_pct >= TIER_STRONG_CHANGE:
+        return "strong_runner"
+    if velocity >= TIER_RUNNER_VELOCITY and vol_accel >= RUNNER_VOL_ACCEL_MIN:
+        return "runner"
+    return None
+
+
+def detect_runner(signal_row, current_data):
+    """
+    Multi-timeframe momentum detection.
+    Returns (is_runner: bool, velocity: float, vol_accel: float, details: dict).
+    """
+    original_price = safe_float(signal_row["original_price"])
+    original_volume_24h = safe_float(signal_row["original_volume"], 1.0)
+    original_timestamp = signal_row["original_timestamp"]
+
+    current_price = safe_float(current_data.get("price"))
+    volume_5m = safe_float(current_data.get("volume_5m"))
+    volume_1h = safe_float(current_data.get("volume_1h"))
+    volume_24h = safe_float(current_data.get("volume_24h"), 1.0)
+
+    if not original_price or original_price <= 0 or not current_price or current_price <= 0:
+        return False, 0.0, 0.0, {}
+
+    try:
+        ts = datetime.fromisoformat(original_timestamp.replace("Z", "+00:00"))
+        elapsed = (utcnow_naive() - ts.replace(tzinfo=None)).total_seconds()
+    except Exception:
+        return False, 0.0, 0.0, {}
+
+    minutes = elapsed / 60.0
+    if minutes < 1:
+        return False, 0.0, 0.0, {}
+
+    price_change_pct = ((current_price - original_price) / original_price) * 100
+    velocity = price_change_pct / minutes
+
+    # Volume acceleration: 5m volume annualized vs 24h volume
+    if volume_24h and volume_24h > 0 and volume_5m is not None:
+        vol_accel = (volume_5m * (24 * 60 / 5)) / volume_24h
+    else:
+        vol_accel = 0.0
+
+    # Multi-timeframe price changes from DexScreener
+    price_change_5m = safe_float(current_data.get("price_change_5m"), 0.0)
+    price_change_1h = safe_float(current_data.get("price_change_1h"), 0.0)
+
+    # Volume profile: 5m vol vs 1h average (per 5min bucket)
+    vol_profile = 0.0
+    if volume_1h and volume_1h > 0 and volume_5m is not None:
+        avg_5m_bucket = volume_1h / 12.0  # 12 five-minute buckets per hour
+        vol_profile = volume_5m / avg_5m_bucket if avg_5m_bucket > 0 else 0.0
+
+    # Acceleration detection: is the 5m change accelerating vs 1h trend?
+    is_accelerating = False
+    if price_change_1h and abs(price_change_1h) > 0:
+        # If 5m change is in the same direction and proportionally larger
+        if price_change_5m > 0 and price_change_1h > 0:
+            expected_5m = price_change_1h / 12.0
+            is_accelerating = price_change_5m > expected_5m * 2
+
+    is_runner = velocity >= RUNNER_VELOCITY_MIN and vol_accel >= RUNNER_VOL_ACCEL_MIN
+    tier = classify_runner_tier(velocity, price_change_pct, vol_accel)
+    if tier is not None:
+        is_runner = True
+
+    details = {
+        "price_change_pct": price_change_pct,
+        "price_change_5m": price_change_5m,
+        "price_change_1h": price_change_1h,
+        "vol_profile": vol_profile,
+        "is_accelerating": is_accelerating,
+        "tier": tier or "runner",
+        "elapsed_minutes": minutes,
+    }
+
+    return is_runner, velocity, vol_accel, details
+
+
+def detect_exit_signal(signal_row, current_data):
+    """Detect potential exit signals: velocity reversal, volume collapse, liquidity drain.
+    Returns (should_exit: bool, reason: str).
+    """
+    max_price = safe_float(signal_row["max_price_seen"])
+    current_price = safe_float(current_data.get("price"))
+    original_liquidity = safe_float(signal_row["original_liquidity"])
+    current_liquidity = safe_float(current_data.get("liquidity"))
+
+    if not current_price or not max_price or max_price <= 0:
+        return False, ""
+
+    # Drawdown from peak
+    drawdown_pct = ((max_price - current_price) / max_price) * 100
+    if drawdown_pct >= 40:
+        return True, f"Drawdown {drawdown_pct:.0f}% from peak"
+
+    # Liquidity drain: >50% liquidity removed
+    if original_liquidity and original_liquidity > 0 and current_liquidity is not None:
+        liq_change = ((current_liquidity - original_liquidity) / original_liquidity) * 100
+        if liq_change <= -50:
+            return True, f"Liquidity drain {liq_change:.0f}%"
+
+    # Volume collapse: 5m volume near zero when price was running
+    price_change_5m = safe_float(current_data.get("price_change_5m"), 0.0)
+    volume_5m = safe_float(current_data.get("volume_5m"), 0.0)
+    if drawdown_pct >= 15 and price_change_5m < -5 and volume_5m < 100:
+        return True, "Volume collapse + reversal"
+
+    return False, ""
+
+
+TIER_LABELS = {
+    "moonshot": "\U0001f680 <b>MOONSHOT DETECTED</b>",
+    "strong_runner": "\U0001f525\U0001f525 <b>STRONG RUNNER</b>",
+    "runner": "\U0001f525 <b>RUNNER DETECTED</b>",
+}
+
+TIER_EXIT = "\U0001f6a8 <b>EXIT SIGNAL</b>"
+
+
+def build_runner_alert_message(signal_row, current_data, velocity, vol_accel, details=None):
+    """Build the runner alert message for REPORT_DESTINATION."""
+    token_address = signal_row["token_address"]
+    chain = (signal_row["chain"] or "").lower()
+    original_price = safe_float(signal_row["original_price"])
+    original_market_cap = safe_float(signal_row["original_market_cap"])
+    original_timestamp = signal_row["original_timestamp"]
+
+    current_price = safe_float(current_data.get("price"))
+    current_market_cap = safe_float(current_data.get("fdv"))
+
+    chain_emoji = CHAIN_EMOJI_MAP.get(chain, "\U0001f48e")
+    token_label = token_display_label(signal_row["token_name"], signal_row["token_symbol"])
+
+    called_time = format_called_time(original_timestamp)
+    price_change_pct = details.get("price_change_pct", 0.0) if details else 0.0
+    if not details and original_price and original_price > 0 and current_price:
+        price_change_pct = ((current_price - original_price) / original_price) * 100
+
+    tier = (details or {}).get("tier", "runner")
+    header = TIER_LABELS.get(tier, TIER_LABELS["runner"])
+
+    lines = [
+        "\u2501" * 32,
+        header,
+        "",
+        f"{chain_emoji} {(chain or 'CHAIN').upper()} \u00b7 {token_label}",
+        f"\U0001f4cd CA (tap to copy): <code>{html.escape(str(token_address))}</code>",
+        "",
+        f"Entry: {called_time} | {format_price(original_price)} | MC {format_currency(original_market_cap)}",
+        f"Now:   {format_price(current_price)} | MC {format_currency(current_market_cap)}",
+        "",
+        f"\U0001f4c8 {price_change_pct:+.1f}% | {velocity:.2f}%/min velocity",
+        f"\U0001f4b9 Vol 5m: {vol_accel:.1f}\u00d7 24h rate",
+    ]
+
+    # Extra details for strong/moonshot
+    if details:
+        extra = []
+        if details.get("is_accelerating"):
+            extra.append("\u26a1 Accelerating")
+        if details.get("vol_profile", 0) >= 3.0:
+            extra.append(f"\U0001f4ca Vol spike: {details['vol_profile']:.1f}x avg")
+        elapsed = details.get("elapsed_minutes", 0)
+        if elapsed:
+            extra.append(f"\u23f1 {elapsed:.0f}min since signal")
+        if extra:
+            lines.append(" | ".join(extra))
+
+    lines.append("")
+
+    sig_link = signal_row["signal_link"]
+    ds_link = signal_row["original_dexscreener_link"]
+    if sig_link:
+        lines.append(f'\U0001f517 Signal: <a href="{html.escape(str(sig_link))}">Original alert</a>')
+    if ds_link:
+        lines.append(f'\U0001f4ca DexScreener: <a href="{html.escape(str(ds_link))}">Chart</a>')
+    lines.append("\u2501" * 32)
+
+    return "\n".join(lines)
+
+
+def build_exit_alert_message(signal_row, current_data, reason):
+    """Build exit signal alert message."""
+    token_address = signal_row["token_address"]
+    chain = (signal_row["chain"] or "").lower()
+    original_price = safe_float(signal_row["original_price"])
+    max_price = safe_float(signal_row["max_price_seen"])
+    current_price = safe_float(current_data.get("price"))
+    current_market_cap = safe_float(current_data.get("fdv"))
+
+    chain_emoji = CHAIN_EMOJI_MAP.get(chain, "\U0001f48e")
+    token_label = token_display_label(signal_row["token_name"], signal_row["token_symbol"])
+
+    price_change_pct = 0.0
+    if original_price and original_price > 0 and current_price:
+        price_change_pct = ((current_price - original_price) / original_price) * 100
+
+    lines = [
+        "\u2501" * 32,
+        TIER_EXIT,
+        "",
+        f"{chain_emoji} {(chain or 'CHAIN').upper()} \u00b7 {token_label}",
+        f"\U0001f4cd CA: <code>{html.escape(str(token_address))}</code>",
+        "",
+        f"Entry: {format_price(original_price)} | Peak: {format_price(max_price)} | Now: {format_price(current_price)}",
+        f"MC: {format_currency(current_market_cap)} | P&L: {price_change_pct:+.1f}%",
+        "",
+        f"\u26a0\ufe0f Reason: {reason}",
+        "\u2501" * 32,
+    ]
+    return "\n".join(lines)
+
+
+async def runner_watcher(client, report_destination_entity):
+    """Main loop: poll for runner candidates every RUNNER_POLL_INTERVAL seconds."""
+    from config import RUNNER_POLL_INTERVAL
+
+    logger.info("Runner watcher started")
+    while True:
+        try:
+            signals = get_signals_for_runner_check()
+            if signals:
+                logger.debug(f"Runner check: {len(signals)} signal(s) in window")
+
+            for signal_row in signals:
+                signal_id = signal_row["id"]
+                chain = signal_row["chain"]
+                token_address = signal_row["token_address"]
+
+                try:
+                    current_data = await enrich_token(chain, token_address)
+                    if not current_data or not current_data.get("price"):
+                        continue
+
+                    is_runner, velocity, vol_accel, details = detect_runner(signal_row, current_data)
+
+                    current_price = safe_float(current_data.get("price"))
+                    current_mc = safe_float(current_data.get("fdv"))
+                    update_max_tracking(signal_id, current_price, current_mc)
+
+                    if is_runner:
+                        price_change_pct = details.get("price_change_pct", 0.0)
+                        await emit(RunnerDetected(
+                            signal_id=signal_id,
+                            token_address=token_address,
+                            chain=chain,
+                            velocity=velocity,
+                            vol_accel=vol_accel,
+                            price_change_pct=price_change_pct,
+                            token_name=signal_row["token_name"] or "",
+                            token_symbol=signal_row["token_symbol"] or "",
+                        ))
+
+                        if report_destination_entity is None:
+                            logger.warning("Runner detected but REPORT_DESTINATION not set")
+                        else:
+                            msg = build_runner_alert_message(signal_row, current_data, velocity, vol_accel, details)
+                            await client.send_message(
+                                report_destination_entity, msg,
+                                parse_mode="html", link_preview=False,
+                            )
+                            mark_runner_alerted(signal_id)
+                            tier = details.get("tier", "runner")
+                            logger.info(f"{tier.upper()} alert sent for signal {signal_id} ({token_address[:8]}...)")
+
+                    # Exit signal detection (for previously alerted runners)
+                    elif signal_row["runner_alerted"]:
+                        should_exit, exit_reason = detect_exit_signal(signal_row, current_data)
+                        if should_exit and report_destination_entity:
+                            msg = build_exit_alert_message(signal_row, current_data, exit_reason)
+                            await client.send_message(
+                                report_destination_entity, msg,
+                                parse_mode="html", link_preview=False,
+                            )
+                            logger.info(f"Exit signal for {signal_id}: {exit_reason}")
+
+                except Exception as e:
+                    logger.error(f"Runner check failed for signal {signal_id}: {e}")
+
+                await asyncio.sleep(1.5)
+
+        except Exception as e:
+            logger.error(f"Runner watcher error: {e}")
+
+        await asyncio.sleep(RUNNER_POLL_INTERVAL)
