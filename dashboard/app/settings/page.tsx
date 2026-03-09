@@ -203,7 +203,7 @@ export default function SettingsPage() {
       {settings?.source_groups && (
         <div className="bg-dark-700 rounded-xl border border-dark-400/30 p-5">
           <h2 className="text-sm font-semibold text-slate-300 mb-4">Source Groups</h2>
-          <p className="text-xs text-slate-600 mb-3">Telegram groups/channels being monitored for signals</p>
+          <p className="text-xs text-slate-600 mb-3">Telegram groups/channels being monitored. Edit SOURCE_GROUPS in .env and restart bot to change.</p>
           <div className="flex flex-wrap gap-2">
             {(Array.isArray(settings.source_groups) ? settings.source_groups : []).map((g: string) => (
               <span key={g} className="px-3 py-1.5 bg-dark-600 border border-dark-400/50 rounded-lg text-sm text-slate-300">

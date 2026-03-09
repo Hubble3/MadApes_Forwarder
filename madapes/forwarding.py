@@ -7,7 +7,7 @@ import time
 from telethon.errors import ChatAdminRequiredError
 from telethon.tl.types import Channel
 
-from config import FORWARD_DELAY, MC_THRESHOLD
+from madapes.runtime_settings import get_forward_delay, get_mc_threshold
 from db import (
     claim_signal_if_new,
     delete_claim,
@@ -68,8 +68,8 @@ async def forward_message(message, chat, sender):
     ctx = app_context
     message_id = message.id
     try:
-        if FORWARD_DELAY > 0:
-            await asyncio.sleep(FORWARD_DELAY)
+        if get_forward_delay() > 0:
+            await asyncio.sleep(get_forward_delay())
 
         # Sender info
         sender_id = message.sender_id
@@ -139,7 +139,7 @@ async def forward_message(message, chat, sender):
 
         destination_type = None
         if market_cap is not None:
-            if market_cap < MC_THRESHOLD:
+            if market_cap < get_mc_threshold():
                 destination = ctx.destination_entity_under_80k
                 destination_type = "under_80k"
             else:

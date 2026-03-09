@@ -99,9 +99,9 @@ async def process_signal(
         first_data = list(dexscreener_data.values())[0]
         market_cap = first_data.get("fdv")
 
-    from config import MC_THRESHOLD
+    from madapes.runtime_settings import get_mc_threshold
     if market_cap is not None:
-        destination_type = "under_80k" if market_cap < MC_THRESHOLD else "over_80k"
+        destination_type = "under_80k" if market_cap < get_mc_threshold() else "over_80k"
     else:
         destination_type = "under_80k"
 

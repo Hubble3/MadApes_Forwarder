@@ -7,7 +7,7 @@ import html
 import logging
 from datetime import datetime
 
-from config import RUNNER_VELOCITY_MIN, RUNNER_VOL_ACCEL_MIN
+from madapes.runtime_settings import get_runner_velocity_min, get_runner_vol_accel_min, get_runner_poll_interval
 from db import get_signals_for_runner_check, mark_runner_alerted, update_max_tracking
 from madapes.constants import CHAIN_EMOJI_MAP
 from madapes.event_bus import emit
@@ -18,11 +18,9 @@ from utils import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
-# Runner tier thresholds
+# Runner tier thresholds (static upper tiers)
 TIER_MOONSHOT_VELOCITY = 5.0    # %/min
 TIER_STRONG_VELOCITY = 3.0     # %/min
-TIER_RUNNER_VELOCITY = RUNNER_VELOCITY_MIN  # default 1.5 %/min
-
 TIER_MOONSHOT_CHANGE = 200.0   # % price change
 TIER_STRONG_CHANGE = 100.0     # %
 
@@ -33,7 +31,7 @@ def classify_runner_tier(velocity, price_change_pct, vol_accel):
         return "moonshot"
     if velocity >= TIER_STRONG_VELOCITY or price_change_pct >= TIER_STRONG_CHANGE:
         return "strong_runner"
-    if velocity >= TIER_RUNNER_VELOCITY and vol_accel >= RUNNER_VOL_ACCEL_MIN:
+    if velocity >= get_runner_velocity_min() and vol_accel >= get_runner_vol_accel_min():
         return "runner"
     return None
 
@@ -92,7 +90,7 @@ def detect_runner(signal_row, current_data):
             expected_5m = price_change_1h / 12.0
             is_accelerating = price_change_5m > expected_5m * 2
 
-    is_runner = velocity >= RUNNER_VELOCITY_MIN and vol_accel >= RUNNER_VOL_ACCEL_MIN
+    is_runner = velocity >= get_runner_velocity_min() and vol_accel >= get_runner_vol_accel_min()
     tier = classify_runner_tier(velocity, price_change_pct, vol_accel)
     if tier is not None:
         is_runner = True
@@ -246,8 +244,7 @@ def build_exit_alert_message(signal_row, current_data, reason):
 
 
 async def runner_watcher(client, report_destination_entity):
-    """Main loop: poll for runner candidates every RUNNER_POLL_INTERVAL seconds."""
-    from config import RUNNER_POLL_INTERVAL
+    """Main loop: poll for runner candidates every poll_interval seconds."""
 
     logger.info("Runner watcher started")
     while True:
@@ -316,4 +313,4 @@ async def runner_watcher(client, report_destination_entity):
         except Exception as e:
             logger.error(f"Runner watcher error: {e}")
 
-        await asyncio.sleep(RUNNER_POLL_INTERVAL)
+        await asyncio.sleep(get_runner_poll_interval())
