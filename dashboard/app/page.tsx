@@ -3,13 +3,15 @@ import StatCard from '@/components/StatCard';
 import SignalCard from '@/components/SignalCard';
 import ChainDistribution from '@/components/ChainDistribution';
 import { SkeletonCard, SkeletonSignal } from '@/components/Skeleton';
-import { useOverview, useRecentSignals, usePortfolioSummary } from '@/lib/hooks';
+import { useOverview, useRecentSignals, usePortfolioSummary, useLivePrices } from '@/lib/hooks';
 import clsx from 'clsx';
 
 export default function DashboardHome() {
   const { data: overview, isLoading: loadingOverview } = useOverview();
   const { data: recent, isLoading: loadingSignals } = useRecentSignals(8);
   const { data: portfolio, isLoading: loadingPortfolio } = usePortfolioSummary();
+  const { data: livePriceData } = useLivePrices();
+  const livePrices = livePriceData?.prices || {};
 
   return (
     <div className="space-y-8">
@@ -140,7 +142,7 @@ export default function DashboardHome() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {recent?.signals.map((signal) => (
-              <SignalCard key={signal.id} signal={signal} />
+              <SignalCard key={signal.id} signal={signal} livePrice={livePrices[String(signal.id)]} />
             ))}
             {(!recent?.signals || recent.signals.length === 0) && (
               <p className="text-sm text-slate-600">No signals yet.</p>

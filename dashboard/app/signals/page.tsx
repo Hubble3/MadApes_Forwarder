@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import SignalCard from '@/components/SignalCard';
 import { SkeletonSignal } from '@/components/Skeleton';
-import { useSignals } from '@/lib/hooks';
+import { useSignals, useLivePrices } from '@/lib/hooks';
 import clsx from 'clsx';
 
 const statusFilters = [
@@ -33,6 +33,9 @@ export default function SignalsPage() {
     limit: 50,
   });
 
+  const { data: livePriceData } = useLivePrices();
+  const livePrices = livePriceData?.prices || {};
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setSearch(searchInput);
@@ -41,10 +44,18 @@ export default function SignalsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Signals</h1>
-        {data && (
-          <p className="text-sm text-slate-500 mt-1">{data.total} signals total</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Signals</h1>
+          {data && (
+            <p className="text-sm text-slate-500 mt-1">{data.total} signals total</p>
+          )}
+        </div>
+        {livePriceData && (
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Live prices (30s)
+          </div>
         )}
       </div>
 
@@ -116,7 +127,11 @@ export default function SignalsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {data?.signals.map((signal) => (
-            <SignalCard key={signal.id} signal={signal} />
+            <SignalCard
+              key={signal.id}
+              signal={signal}
+              livePrice={livePrices[String(signal.id)]}
+            />
           ))}
           {(!data?.signals || data.signals.length === 0) && (
             <div className="col-span-2 py-12 text-center">

@@ -68,6 +68,10 @@ DISPLAY_TIMEZONE = os.getenv('DISPLAY_TIMEZONE', 'America/New_York').strip()
 # Redis (optional - enables caching, pub/sub events, rate limiting)
 REDIS_URL = os.getenv('REDIS_URL', '').strip() or None
 
+# Minimum market cap filter (USD) — signals below this MC at detection are skipped entirely
+# Set to 0 to disable filtering (forward all signals regardless of MC)
+MIN_MARKET_CAP = float(os.getenv('MIN_MARKET_CAP', '0'))
+
 # Runner detection (near-real-time momentum alerts)
 RUNNER_VELOCITY_MIN = float(os.getenv('RUNNER_VELOCITY_MIN', '1.5'))   # % per minute
 RUNNER_VOL_ACCEL_MIN = float(os.getenv('RUNNER_VOL_ACCEL_MIN', '1.5'))  # 5m vol vs 24h rate

@@ -1,5 +1,5 @@
 'use client';
-import type { Signal } from '@/lib/api';
+import type { Signal, LivePrice } from '@/lib/api';
 import Link from 'next/link';
 import clsx from 'clsx';
 import { formatPrice, formatCurrency, timeAgo } from '@/lib/format';
@@ -19,13 +19,36 @@ const statusConfig: Record<string, { bg: string; text: string; label: string }> 
   loss: { bg: 'bg-red-500/15', text: 'text-red-400', label: 'LOSS' },
 };
 
-export default function SignalCard({ signal }: { signal: Signal }) {
+interface SignalCardProps {
+  signal: Signal;
+  livePrice?: LivePrice;
+}
+
+export default function SignalCard({ signal, livePrice }: SignalCardProps) {
   const chain = (signal.chain || '').toLowerCase();
   const cc = chainConfig[chain] || { bg: 'bg-slate-500/15', text: 'text-slate-400', dot: 'bg-slate-400' };
-  const sc = statusConfig[signal.status] || statusConfig.active;
-  const pnl = signal.price_change_percent;
+
+  // Use live data if available, otherwise fall back to DB stored values
+  const currentPrice = livePrice?.price ?? signal.current_price;
+  const currentMC = livePrice?.market_cap ?? signal.current_market_cap;
+
+  // Calculate P&L from live data
+  let pnl = signal.price_change_percent;
+  let multiplier = signal.multiplier;
+  if (livePrice?.price && signal.original_price && signal.original_price > 0) {
+    pnl = ((livePrice.price - signal.original_price) / signal.original_price) * 100;
+    multiplier = livePrice.price / signal.original_price;
+  }
+
   const isWin = pnl !== null && pnl > 0;
   const isLoss = pnl !== null && pnl < 0;
+
+  // Dynamic status: if we have live P&L, override the stored status
+  let liveStatus = signal.status;
+  if (pnl !== null && signal.original_price) {
+    liveStatus = isWin ? 'win' : isLoss ? 'loss' : 'active';
+  }
+  const sc2 = statusConfig[liveStatus] || statusConfig.active;
 
   return (
     <Link
@@ -33,18 +56,18 @@ export default function SignalCard({ signal }: { signal: Signal }) {
       className={clsx(
         'group relative overflow-hidden rounded-xl border bg-dark-700 p-4 transition-all duration-300 block cursor-pointer',
         'hover:bg-dark-600 hover:border-dark-300',
-        signal.status === 'win' && 'border-emerald-500/20 hover:border-emerald-500/40',
-        signal.status === 'loss' && 'border-red-500/20 hover:border-red-500/40',
-        signal.status === 'active' && 'border-dark-400/50',
+        liveStatus === 'win' && 'border-emerald-500/20 hover:border-emerald-500/40',
+        liveStatus === 'loss' && 'border-red-500/20 hover:border-red-500/40',
+        liveStatus === 'active' && 'border-dark-400/50',
       )}
     >
       {/* Top accent line */}
       <div
         className={clsx(
           'absolute top-0 left-0 right-0 h-[2px]',
-          signal.status === 'win' && 'bg-gradient-to-r from-emerald-500 to-emerald-500/0',
-          signal.status === 'loss' && 'bg-gradient-to-r from-red-500 to-red-500/0',
-          signal.status === 'active' && 'bg-gradient-to-r from-blue-500 to-blue-500/0',
+          liveStatus === 'win' && 'bg-gradient-to-r from-emerald-500 to-emerald-500/0',
+          liveStatus === 'loss' && 'bg-gradient-to-r from-red-500 to-red-500/0',
+          liveStatus === 'active' && 'bg-gradient-to-r from-blue-500 to-blue-500/0',
         )}
       />
 
@@ -68,26 +91,37 @@ export default function SignalCard({ signal }: { signal: Signal }) {
             </span>
           )}
         </div>
-        <span className={clsx('px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider', sc.bg, sc.text)}>
-          {sc.label}
-        </span>
+        <div className="flex items-center gap-2">
+          {livePrice && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="Live data" />
+          )}
+          <span className={clsx('px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider', sc2.bg, sc2.text)}>
+            {sc2.label}
+          </span>
+        </div>
       </div>
 
-      {/* Price grid */}
-      <div className="grid grid-cols-3 gap-3 mb-3">
+      {/* Price & MC grid */}
+      <div className="grid grid-cols-4 gap-2 mb-3">
         <div>
           <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-0.5">Entry</p>
           <p className="text-xs text-slate-300 font-mono">{formatPrice(signal.original_price)}</p>
         </div>
         <div>
           <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-0.5">Now</p>
-          <p className={clsx('text-xs font-mono', signal.current_price ? 'text-slate-300' : 'text-slate-600')}>
-            {formatPrice(signal.current_price)}
+          <p className={clsx('text-xs font-mono', currentPrice ? 'text-white' : 'text-slate-600')}>
+            {formatPrice(currentPrice)}
           </p>
         </div>
         <div>
-          <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-0.5">MC</p>
+          <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-0.5">Entry MC</p>
           <p className="text-xs text-slate-300 font-mono">{formatCurrency(signal.original_market_cap)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-0.5">Live MC</p>
+          <p className={clsx('text-xs font-mono', currentMC ? 'text-white' : 'text-slate-600')}>
+            {formatCurrency(currentMC)}
+          </p>
         </div>
       </div>
 
@@ -133,9 +167,9 @@ export default function SignalCard({ signal }: { signal: Signal }) {
             )}
           >
             {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
-            {signal.multiplier !== null && (
+            {multiplier !== null && multiplier !== undefined && (
               <span className="text-[11px] font-normal text-slate-500 ml-1">
-                ({signal.multiplier.toFixed(2)}x)
+                ({multiplier.toFixed(2)}x)
               </span>
             )}
           </span>

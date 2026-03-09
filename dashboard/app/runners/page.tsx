@@ -2,11 +2,13 @@
 import StatCard from '@/components/StatCard';
 import SignalCard from '@/components/SignalCard';
 import { SkeletonCard, SkeletonSignal } from '@/components/Skeleton';
-import { useRunners, useRunnerStats } from '@/lib/hooks';
+import { useRunners, useRunnerStats, useLivePrices } from '@/lib/hooks';
 
 export default function RunnersPage() {
   const { data: stats, isLoading: loadingStats } = useRunnerStats();
   const { data: runners, isLoading: loadingRunners } = useRunners(30);
+  const { data: livePriceData } = useLivePrices();
+  const livePrices = livePriceData?.prices || {};
 
   return (
     <div className="space-y-8">
@@ -52,7 +54,7 @@ export default function RunnersPage() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {runners?.runners.map((signal) => (
-              <SignalCard key={signal.id} signal={signal} />
+              <SignalCard key={signal.id} signal={signal} livePrice={livePrices[String(signal.id)]} />
             ))}
             {(!runners?.runners || runners.runners.length === 0) && (
               <div className="col-span-2 py-12 text-center">

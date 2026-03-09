@@ -24,6 +24,7 @@ def _row_to_dict(row):
 # ── Pydantic models ──────────────────────────────────────────────────
 
 class SettingsUpdate(BaseModel):
+    min_market_cap: Optional[float] = None
     mc_threshold: Optional[float] = None
     forward_delay: Optional[float] = None
     max_signals: Optional[int] = None
@@ -31,41 +32,12 @@ class SettingsUpdate(BaseModel):
     runner_velocity_min: Optional[float] = None
     runner_vol_accel_min: Optional[float] = None
     runner_poll_interval: Optional[int] = None
-    source_groups: Optional[list] = None
-    report_destination: Optional[str] = None
-
-
-class BlockCallerRequest(BaseModel):
-    sender_id: int
-    reason: Optional[str] = None
-
-
-class UnblockCallerRequest(BaseModel):
-    sender_id: int
-
-
-class BoostCallerRequest(BaseModel):
-    sender_id: int
-    multiplier: float
-
-
-class BlacklistAddRequest(BaseModel):
-    address: str
-    chain: Optional[str] = None
-    reason: Optional[str] = None
-
-
-class SignalStatusOverride(BaseModel):
-    new_status: str
-
-
-class SignalNoteRequest(BaseModel):
-    note: str
 
 
 # ── Helper: read settings with runtime overrides ─────────────────────
 
 SETTINGS_KEYS = {
+    "min_market_cap": lambda: str(config.MIN_MARKET_CAP),
     "mc_threshold": lambda: str(config.MC_THRESHOLD),
     "forward_delay": lambda: str(config.FORWARD_DELAY),
     "max_signals": lambda: str(config.MAX_SIGNALS),
@@ -94,7 +66,7 @@ def _get_all_settings() -> dict:
     # Parse types for JSON response
     result = {}
     for k, v in settings.items():
-        if k in ("mc_threshold", "forward_delay", "runner_velocity_min", "runner_vol_accel_min"):
+        if k in ("min_market_cap", "mc_threshold", "forward_delay", "runner_velocity_min", "runner_vol_accel_min"):
             try:
                 result[k] = float(v)
             except (ValueError, TypeError):
@@ -115,7 +87,7 @@ def _get_all_settings() -> dict:
     return result
 
 
-# ── 1. GET /api/settings/ ────────────────────────────────────────────
+# ── GET /api/settings/ ───────────────────────────────────────────────
 
 @router.get("/")
 async def get_settings(api_key: str = Depends(verify_api_key)):
@@ -123,7 +95,7 @@ async def get_settings(api_key: str = Depends(verify_api_key)):
     return {"settings": _get_all_settings()}
 
 
-# ── 2. POST /api/settings/ ──────────────────────────────────────────
+# ── POST /api/settings/ ─────────────────────────────────────────────
 
 @router.post("/")
 async def update_settings(body: SettingsUpdate, api_key: str = Depends(verify_api_key)):
@@ -147,7 +119,7 @@ async def update_settings(body: SettingsUpdate, api_key: str = Depends(verify_ap
     return {"settings": _get_all_settings(), "updated_keys": list(updates.keys())}
 
 
-# ── 3. GET /api/settings/health ──────────────────────────────────────
+# ── GET /api/settings/health ─────────────────────────────────────────
 
 @router.get("/health")
 async def system_health(api_key: str = Depends(verify_api_key)):
@@ -155,13 +127,10 @@ async def system_health(api_key: str = Depends(verify_api_key)):
     db_stats = {}
     with get_connection() as conn:
         db_stats["total_signals"] = conn.execute("SELECT COUNT(*) as cnt FROM signals").fetchone()["cnt"]
-
-        # Total unique callers
         db_stats["total_callers"] = conn.execute(
             "SELECT COUNT(DISTINCT sender_id) as cnt FROM signals WHERE sender_id IS NOT NULL"
         ).fetchone()["cnt"]
 
-        # Portfolio entries (table may not exist)
         try:
             db_stats["portfolio_entries"] = conn.execute(
                 "SELECT COUNT(*) as cnt FROM portfolio"
@@ -169,7 +138,6 @@ async def system_health(api_key: str = Depends(verify_api_key)):
         except Exception:
             db_stats["portfolio_entries"] = 0
 
-        # First signal today for uptime estimate
         today_start = datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0, tzinfo=None
         ).isoformat()
@@ -178,19 +146,16 @@ async def system_health(api_key: str = Depends(verify_api_key)):
             (today_start,),
         ).fetchone()
 
-    # DB file size
     try:
         db_stats["db_file_size_mb"] = round(os.path.getsize(DB_FILE) / (1024 * 1024), 2)
     except OSError:
         db_stats["db_file_size_mb"] = None
 
-    # Uptime estimate
     uptime_seconds = None
     if first_today and first_today["ts"]:
         first_ts = datetime.fromisoformat(first_today["ts"])
         uptime_seconds = int((datetime.now(timezone.utc).replace(tzinfo=None) - first_ts).total_seconds())
 
-    # Redis status
     redis_status = "not_configured"
     if config.REDIS_URL:
         try:
@@ -209,118 +174,7 @@ async def system_health(api_key: str = Depends(verify_api_key)):
     }
 
 
-# ── 4-7. Caller management ──────────────────────────────────────────
-
-@router.get("/callers/blocked")
-async def list_blocked_callers(api_key: str = Depends(verify_api_key)):
-    """List all blocked callers."""
-    with get_connection() as conn:
-        rows = conn.execute("SELECT * FROM blocked_callers ORDER BY blocked_at DESC").fetchall()
-    return {"blocked_callers": [_row_to_dict(r) for r in rows]}
-
-
-@router.post("/callers/block")
-async def block_caller(body: BlockCallerRequest, api_key: str = Depends(verify_api_key)):
-    """Block a caller by sender_id."""
-    now = utcnow_iso()
-    with get_connection() as conn:
-        # Try to get sender name from signals
-        name_row = conn.execute(
-            "SELECT sender_name FROM signals WHERE sender_id = ? AND sender_name IS NOT NULL LIMIT 1",
-            (body.sender_id,),
-        ).fetchone()
-        sender_name = name_row["sender_name"] if name_row else None
-
-        conn.execute(
-            """INSERT INTO blocked_callers (sender_id, sender_name, reason, blocked_at)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(sender_id) DO UPDATE SET reason = excluded.reason, blocked_at = excluded.blocked_at""",
-            (body.sender_id, sender_name, body.reason, now),
-        )
-        conn.commit()
-    return {"status": "blocked", "sender_id": body.sender_id}
-
-
-@router.post("/callers/unblock")
-async def unblock_caller(body: UnblockCallerRequest, api_key: str = Depends(verify_api_key)):
-    """Unblock a caller by sender_id."""
-    with get_connection() as conn:
-        cursor = conn.execute("DELETE FROM blocked_callers WHERE sender_id = ?", (body.sender_id,))
-        conn.commit()
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Caller not found in blocklist")
-    return {"status": "unblocked", "sender_id": body.sender_id}
-
-
-@router.post("/callers/boost")
-async def boost_caller(body: BoostCallerRequest, api_key: str = Depends(verify_api_key)):
-    """Set a score multiplier for a caller (stored in bot_settings as caller_boost:<sender_id>)."""
-    now = utcnow_iso()
-    key = f"caller_boost:{body.sender_id}"
-    with get_connection() as conn:
-        conn.execute(
-            """INSERT INTO bot_settings (key, value, updated_at)
-               VALUES (?, ?, ?)
-               ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
-            (key, str(body.multiplier), now),
-        )
-        conn.commit()
-    return {"status": "boosted", "sender_id": body.sender_id, "multiplier": body.multiplier}
-
-
-# ── 8-10. Contract blacklist ─────────────────────────────────────────
-
-@router.get("/blacklist")
-async def list_blacklist(api_key: str = Depends(verify_api_key)):
-    """List all blacklisted contract addresses."""
-    with get_connection() as conn:
-        rows = conn.execute("SELECT * FROM contract_blacklist ORDER BY added_at DESC").fetchall()
-    return {"blacklist": [_row_to_dict(r) for r in rows]}
-
-
-@router.post("/blacklist")
-async def add_to_blacklist(body: BlacklistAddRequest, api_key: str = Depends(verify_api_key)):
-    """Add a contract address to the blacklist."""
-    now = utcnow_iso()
-    with get_connection() as conn:
-        conn.execute(
-            """INSERT INTO contract_blacklist (address, chain, reason, added_at)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(address) DO UPDATE SET chain = excluded.chain, reason = excluded.reason, added_at = excluded.added_at""",
-            (body.address.strip().lower(), body.chain, body.reason, now),
-        )
-        conn.commit()
-    return {"status": "blacklisted", "address": body.address.strip().lower()}
-
-
-@router.delete("/blacklist/{address}")
-async def remove_from_blacklist(address: str, api_key: str = Depends(verify_api_key)):
-    """Remove a contract address from the blacklist."""
-    with get_connection() as conn:
-        cursor = conn.execute("DELETE FROM contract_blacklist WHERE address = ?", (address.strip().lower(),))
-        conn.commit()
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Address not found in blacklist")
-    return {"status": "removed", "address": address.strip().lower()}
-
-
-# ── 11-13. Signal operations ─────────────────────────────────────────
-
-@router.post("/signals/{signal_id}/status")
-async def override_signal_status(signal_id: int, body: SignalStatusOverride, api_key: str = Depends(verify_api_key)):
-    """Override signal status (win/loss/active)."""
-    if body.new_status not in ("win", "loss", "active"):
-        raise HTTPException(status_code=400, detail="Status must be one of: win, loss, active")
-
-    row = get_signal_by_id(signal_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Signal not found")
-
-    with get_connection() as conn:
-        conn.execute("UPDATE signals SET status = ?, outcome = ? WHERE id = ?", (body.new_status, body.new_status, signal_id))
-        conn.commit()
-    return {"status": "updated", "signal_id": signal_id, "new_status": body.new_status}
-
+# ── Signal operations ────────────────────────────────────────────────
 
 @router.delete("/signals/{signal_id}")
 async def delete_signal(signal_id: int, api_key: str = Depends(verify_api_key)):
@@ -330,27 +184,9 @@ async def delete_signal(signal_id: int, api_key: str = Depends(verify_api_key)):
         raise HTTPException(status_code=404, detail="Signal not found")
 
     with get_connection() as conn:
-        conn.execute("DELETE FROM signal_notes WHERE signal_id = ?", (signal_id,))
         conn.execute("DELETE FROM signals WHERE id = ?", (signal_id,))
         conn.commit()
     return {"status": "deleted", "signal_id": signal_id}
-
-
-@router.post("/signals/{signal_id}/note")
-async def add_signal_note(signal_id: int, body: SignalNoteRequest, api_key: str = Depends(verify_api_key)):
-    """Add a note to a signal."""
-    row = get_signal_by_id(signal_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Signal not found")
-
-    now = utcnow_iso()
-    with get_connection() as conn:
-        conn.execute(
-            "INSERT INTO signal_notes (signal_id, note, created_at) VALUES (?, ?, ?)",
-            (signal_id, body.note, now),
-        )
-        conn.commit()
-    return {"status": "note_added", "signal_id": signal_id}
 
 
 @router.post("/signals/{signal_id}/recheck")
@@ -374,7 +210,6 @@ async def recheck_signal(signal_id: int, api_key: str = Depends(verify_api_key))
     if not data:
         return {"status": "no_data", "signal_id": signal_id}
 
-    # Update signal with fresh data
     current_price = float(data.get("price")) if data.get("price") else None
     current_volume = float(data.get("volume_24h")) if data.get("volume_24h") else None
     current_liquidity = float(data.get("liquidity")) if data.get("liquidity") else None
@@ -410,7 +245,7 @@ async def recheck_signal(signal_id: int, api_key: str = Depends(verify_api_key))
     }
 
 
-# ── 14-15. Export endpoints ──────────────────────────────────────────
+# ── Export endpoints ─────────────────────────────────────────────────
 
 @router.get("/export/signals")
 async def export_signals(api_key: str = Depends(verify_api_key)):

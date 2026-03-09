@@ -4,8 +4,17 @@ from fastapi import APIRouter, Depends, Query
 from api.auth import verify_api_key
 from db import get_connection
 from madapes.services.leaderboard_service import get_performance_attribution
+from madapes.runtime_settings import get_min_market_cap
 
 router = APIRouter()
+
+
+def _mc_filter_clause():
+    """Return SQL clause and params to filter signals by min market cap setting."""
+    min_mc = get_min_market_cap()
+    if min_mc > 0:
+        return " AND (original_market_cap IS NULL OR original_market_cap >= ?)", [min_mc]
+    return "", []
 
 
 @router.get("/attribution")
@@ -28,7 +37,6 @@ async def daily_analytics(
     days = []
     for row in rows:
         d = {key: row[key] for key in row.keys()}
-        # Rename DB columns to frontend-expected names
         if "win_count" in d:
             d["wins"] = d.pop("win_count")
         if "loss_count" in d:
@@ -44,26 +52,29 @@ async def daily_analytics(
 @router.get("/overview")
 async def overview(api_key: str = Depends(verify_api_key)):
     """Dashboard overview: counts, win rate, recent activity."""
+    mc_clause, mc_params = _mc_filter_clause()
+    base = "SELECT COUNT(*) as cnt FROM signals WHERE 1=1" + mc_clause
+
     with get_connection() as conn:
-        total = conn.execute("SELECT COUNT(*) as cnt FROM signals").fetchone()["cnt"]
-        wins = conn.execute("SELECT COUNT(*) as cnt FROM signals WHERE status='win'").fetchone()["cnt"]
-        losses = conn.execute("SELECT COUNT(*) as cnt FROM signals WHERE status='loss'").fetchone()["cnt"]
-        active = conn.execute("SELECT COUNT(*) as cnt FROM signals WHERE status='active'").fetchone()["cnt"]
-        runners = conn.execute("SELECT COUNT(*) as cnt FROM signals WHERE runner_alerted=1").fetchone()["cnt"]
+        total = conn.execute(base, mc_params).fetchone()["cnt"]
+        wins = conn.execute(base + " AND status='win'", mc_params).fetchone()["cnt"]
+        losses = conn.execute(base + " AND status='loss'", mc_params).fetchone()["cnt"]
+        active = conn.execute(base + " AND status='active'", mc_params).fetchone()["cnt"]
+        runners = conn.execute(base + " AND runner_alerted=1", mc_params).fetchone()["cnt"]
 
         # Today's signals
         from utils import utcnow_naive
         from datetime import timedelta
         today_cutoff = (utcnow_naive() - timedelta(hours=24)).isoformat()
         today_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM signals WHERE original_timestamp > ?",
-            (today_cutoff,),
+            base + " AND original_timestamp > ?",
+            mc_params + [today_cutoff],
         ).fetchone()["cnt"]
 
         # Chain distribution
         chain_rows = conn.execute(
-            """SELECT chain, COUNT(*) as cnt FROM signals
-               WHERE chain IS NOT NULL GROUP BY chain ORDER BY cnt DESC"""
+            "SELECT chain, COUNT(*) as cnt FROM signals WHERE chain IS NOT NULL" + mc_clause + " GROUP BY chain ORDER BY cnt DESC",
+            mc_params,
         ).fetchall()
 
     checked = wins + losses

@@ -19,6 +19,7 @@ export default function SettingsPage() {
   const settings = settingsData?.settings;
 
   // Editable settings state
+  const [minMarketCap, setMinMarketCap] = useState('');
   const [mcThreshold, setMcThreshold] = useState('');
   const [maxSignals, setMaxSignals] = useState('');
   const [forwardDelay, setForwardDelay] = useState('');
@@ -29,6 +30,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (settings) {
+      setMinMarketCap(String(settings.min_market_cap ?? '0'));
       setMcThreshold(String(settings.mc_threshold ?? ''));
       setMaxSignals(String(settings.max_signals ?? ''));
       setForwardDelay(String(settings.forward_delay ?? ''));
@@ -48,7 +50,7 @@ export default function SettingsPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-white tracking-tight">Settings</h1>
-        <p className="text-sm text-slate-500 mt-1">Bot configuration and signal filtering</p>
+        <p className="text-sm text-slate-500 mt-1">Bot configuration and signal filtering — changes take effect within 10 seconds</p>
       </div>
 
       {/* System Health */}
@@ -83,13 +85,50 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Signal Routing & Filtering */}
+      {/* Signal Filtering */}
       <div className="bg-dark-700 rounded-xl border border-dark-400/30 p-5">
-        <h2 className="text-sm font-semibold text-slate-300 mb-4">Signal Routing & Filtering</h2>
+        <h2 className="text-sm font-semibold text-slate-300 mb-1">Signal Filtering</h2>
+        <p className="text-xs text-slate-600 mb-4">Control which signals get forwarded based on market cap at detection time</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2 bg-dark-600/50 rounded-lg p-4 border border-dark-400/30">
+            <label className="block text-xs text-white font-semibold mb-1">Minimum Market Cap (USD)</label>
+            <p className="text-[10px] text-slate-500 mb-2">Signals with MC below this value at detection are <span className="text-red-400 font-medium">skipped entirely</span> (not forwarded). Set to 0 to forward all signals.</p>
+            <input
+              type="number"
+              value={minMarketCap}
+              onChange={(e) => setMinMarketCap(e.target.value)}
+              placeholder="0"
+              className="w-full bg-dark-700 border border-dark-400/50 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500/50"
+            />
+            {Number(minMarketCap) > 0 && (
+              <p className="text-[10px] text-amber-400 mt-1.5">
+                Only tokens with MC &ge; ${Number(minMarketCap).toLocaleString()} will be forwarded
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            onClick={() => updateMutation.mutate({
+              min_market_cap: Number(minMarketCap),
+            })}
+            disabled={updateMutation.isPending}
+            className="px-4 py-2 bg-blue-500/20 text-blue-400 text-sm font-medium rounded-lg hover:bg-blue-500/30 transition-colors disabled:opacity-50"
+          >
+            {updateMutation.isPending ? 'Saving...' : 'Save Filter'}
+          </button>
+          {updateMutation.isSuccess && <span className="text-xs text-emerald-400">Saved!</span>}
+        </div>
+      </div>
+
+      {/* Signal Routing */}
+      <div className="bg-dark-700 rounded-xl border border-dark-400/30 p-5">
+        <h2 className="text-sm font-semibold text-slate-300 mb-1">Signal Routing</h2>
+        <p className="text-xs text-slate-600 mb-4">How signals are routed to different Telegram destinations after passing the filter</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Market Cap Threshold (USD)</label>
-            <p className="text-[10px] text-slate-600 mb-1.5">Signals below this go to low-cap destination, above to main</p>
+            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Routing Threshold (USD)</label>
+            <p className="text-[10px] text-slate-600 mb-1.5">MC below this → low-cap destination, above → main destination</p>
             <input
               type="number"
               value={mcThreshold}

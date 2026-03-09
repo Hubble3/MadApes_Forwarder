@@ -44,6 +44,16 @@ export interface Signal {
   signal_link: string | null;
 }
 
+export interface LivePrice {
+  price: number | null;
+  market_cap: number | null;
+  price_change_5m: number | null;
+  price_change_1h: number | null;
+  price_change_24h: number | null;
+  volume_24h: number | null;
+  liquidity: number | null;
+}
+
 export interface Caller {
   sender_id: number;
   sender_name: string;
@@ -117,6 +127,8 @@ export const api = {
       fetchApi<{ signals: Signal[] }>(`/api/signals/recent?limit=${limit}`),
     stats: () => fetchApi<{ total: number; active: number; wins: number; losses: number; win_rate: number }>('/api/signals/stats'),
     get: (id: number) => fetchApi<{ signal: Signal }>(`/api/signals/${id}`),
+    livePrices: () =>
+      fetchApi<{ prices: Record<string, LivePrice> }>('/api/signals/live-prices'),
   },
 
   callers: {

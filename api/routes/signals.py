@@ -1,9 +1,15 @@
 """Signal endpoints."""
+import asyncio
+import logging
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
 
 from api.auth import verify_api_key
 from db import get_connection, get_signal_by_id
+from dexscreener import fetch_token_data
+from madapes.runtime_settings import get_min_market_cap
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -12,6 +18,14 @@ def _row_to_dict(row):
     if row is None:
         return None
     return {key: row[key] for key in row.keys()}
+
+
+def _mc_filter_clause():
+    """Return SQL clause and params to filter signals by min market cap setting."""
+    min_mc = get_min_market_cap()
+    if min_mc > 0:
+        return " AND (original_market_cap IS NULL OR original_market_cap >= ?)", [min_mc]
+    return "", []
 
 
 @router.get("/")
@@ -25,9 +39,11 @@ async def list_signals(
     api_key: str = Depends(verify_api_key),
 ):
     """List signals with optional filters."""
+    mc_clause, mc_params = _mc_filter_clause()
+
     with get_connection() as conn:
-        query = "SELECT * FROM signals WHERE 1=1"
-        params = []
+        query = "SELECT * FROM signals WHERE 1=1" + mc_clause
+        params = list(mc_params)
         if status:
             query += " AND status = ?"
             params.append(status)
@@ -63,10 +79,11 @@ async def recent_signals(
     api_key: str = Depends(verify_api_key),
 ):
     """Get most recent signals."""
+    mc_clause, mc_params = _mc_filter_clause()
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM signals ORDER BY original_timestamp DESC LIMIT ?",
-            (limit,),
+            "SELECT * FROM signals WHERE 1=1" + mc_clause + " ORDER BY original_timestamp DESC LIMIT ?",
+            mc_params + [limit],
         ).fetchall()
     return {"signals": [_row_to_dict(r) for r in rows]}
 
@@ -74,11 +91,13 @@ async def recent_signals(
 @router.get("/stats")
 async def signal_stats(api_key: str = Depends(verify_api_key)):
     """Get signal count statistics."""
+    mc_clause, mc_params = _mc_filter_clause()
+    base = "SELECT COUNT(*) as cnt FROM signals WHERE 1=1" + mc_clause
     with get_connection() as conn:
-        total = conn.execute("SELECT COUNT(*) as cnt FROM signals").fetchone()["cnt"]
-        active = conn.execute("SELECT COUNT(*) as cnt FROM signals WHERE status='active'").fetchone()["cnt"]
-        wins = conn.execute("SELECT COUNT(*) as cnt FROM signals WHERE status='win'").fetchone()["cnt"]
-        losses = conn.execute("SELECT COUNT(*) as cnt FROM signals WHERE status='loss'").fetchone()["cnt"]
+        total = conn.execute(base, mc_params).fetchone()["cnt"]
+        active = conn.execute(base + " AND status='active'", mc_params).fetchone()["cnt"]
+        wins = conn.execute(base + " AND status='win'", mc_params).fetchone()["cnt"]
+        losses = conn.execute(base + " AND status='loss'", mc_params).fetchone()["cnt"]
     checked = wins + losses
     return {
         "total": total,
@@ -88,6 +107,89 @@ async def signal_stats(api_key: str = Depends(verify_api_key)):
         "checked": checked,
         "win_rate": round((wins / checked * 100) if checked > 0 else 0, 1),
     }
+
+
+@router.get("/live-prices")
+async def live_prices(api_key: str = Depends(verify_api_key)):
+    """Fetch live prices from DexScreener for all active signals."""
+    mc_clause, mc_params = _mc_filter_clause()
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, token_address, chain FROM signals WHERE 1=1" + mc_clause + " ORDER BY original_timestamp DESC LIMIT 50",
+            mc_params,
+        ).fetchall()
+
+    if not rows:
+        return {"prices": {}}
+
+    # Deduplicate by token_address
+    unique_tokens = {}
+    signal_to_token = {}
+    for row in rows:
+        addr = row["token_address"]
+        if addr not in unique_tokens:
+            unique_tokens[addr] = row["chain"]
+        signal_to_token[row["id"]] = addr
+
+    # Fetch concurrently (max 15)
+    semaphore = asyncio.Semaphore(15)
+
+    async def fetch_one(address: str, chain: str):
+        async with semaphore:
+            try:
+                data = await fetch_token_data(chain, address)
+                if data:
+                    return address, {
+                        "price": float(data["price"]) if data.get("price") else None,
+                        "market_cap": float(data["fdv"]) if data.get("fdv") else None,
+                        "price_change_5m": float(data["price_change_5m"]) if data.get("price_change_5m") else None,
+                        "price_change_1h": float(data["price_change_1h"]) if data.get("price_change_1h") else None,
+                        "price_change_24h": float(data["price_change_24h"]) if data.get("price_change_24h") else None,
+                        "volume_24h": float(data["volume_24h"]) if data.get("volume_24h") else None,
+                        "liquidity": float(data["liquidity"]) if data.get("liquidity") else None,
+                    }
+            except Exception as e:
+                logger.debug(f"Live price fetch failed for {address[:8]}...: {e}")
+            return address, None
+
+    tasks = [fetch_one(addr, chain) for addr, chain in unique_tokens.items()]
+    results = await asyncio.gather(*tasks)
+    token_prices = {addr: data for addr, data in results if data is not None}
+
+    # Map signal IDs to their live price data
+    prices = {}
+    for signal_id, addr in signal_to_token.items():
+        if addr in token_prices:
+            prices[str(signal_id)] = token_prices[addr]
+
+    # Auto-fill missing entry prices
+    if prices:
+        try:
+            with get_connection() as conn:
+                missing = conn.execute(
+                    "SELECT id, token_address FROM signals WHERE original_price IS NULL AND id IN ({})".format(
+                        ",".join("?" for _ in prices)
+                    ),
+                    list(int(k) for k in prices.keys()),
+                ).fetchall()
+                for row in missing:
+                    sid = str(row["id"])
+                    live = prices.get(sid)
+                    if live and live.get("price"):
+                        conn.execute(
+                            """UPDATE signals SET
+                                original_price = ?, original_market_cap = ?,
+                                original_liquidity = ?, original_volume = ?
+                            WHERE id = ? AND original_price IS NULL""",
+                            (live["price"], live["market_cap"], live["liquidity"], live["volume_24h"], int(sid)),
+                        )
+                        logger.info(f"Auto-filled entry price for signal {sid}: ${live['price']}")
+                if missing:
+                    conn.commit()
+        except Exception as e:
+            logger.debug(f"Auto-fill entry prices failed: {e}")
+
+    return {"prices": prices}
 
 
 @router.get("/{signal_id}")

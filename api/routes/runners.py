@@ -3,8 +3,16 @@ from fastapi import APIRouter, Depends, Query
 
 from api.auth import verify_api_key
 from db import get_connection
+from madapes.runtime_settings import get_min_market_cap
 
 router = APIRouter()
+
+
+def _mc_filter_clause():
+    min_mc = get_min_market_cap()
+    if min_mc > 0:
+        return " AND (original_market_cap IS NULL OR original_market_cap >= ?)", [min_mc]
+    return "", []
 
 
 @router.get("/")
@@ -13,13 +21,11 @@ async def list_runners(
     api_key: str = Depends(verify_api_key),
 ):
     """Get signals that triggered runner alerts."""
+    mc_clause, mc_params = _mc_filter_clause()
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT * FROM signals
-               WHERE runner_alerted = 1
-               ORDER BY runner_alerted_at DESC
-               LIMIT ?""",
-            (limit,),
+            "SELECT * FROM signals WHERE runner_alerted = 1" + mc_clause + " ORDER BY runner_alerted_at DESC LIMIT ?",
+            mc_params + [limit],
         ).fetchall()
     return {
         "runners": [
@@ -32,25 +38,31 @@ async def list_runners(
 @router.get("/stats")
 async def runner_stats(api_key: str = Depends(verify_api_key)):
     """Get runner detection statistics."""
+    mc_clause, mc_params = _mc_filter_clause()
+    base = " WHERE 1=1" + mc_clause
+
     with get_connection() as conn:
         total_runners = conn.execute(
-            "SELECT COUNT(*) as cnt FROM signals WHERE runner_alerted = 1"
+            "SELECT COUNT(*) as cnt FROM signals" + base + " AND runner_alerted = 1",
+            mc_params,
         ).fetchone()["cnt"]
         total_signals = conn.execute(
-            "SELECT COUNT(*) as cnt FROM signals WHERE status IN ('active','win','loss')"
+            "SELECT COUNT(*) as cnt FROM signals" + base + " AND status IN ('active','win','loss')",
+            mc_params,
         ).fetchone()["cnt"]
 
-        # Runner win rate
         runner_wins = conn.execute(
-            "SELECT COUNT(*) as cnt FROM signals WHERE runner_alerted = 1 AND status = 'win'"
+            "SELECT COUNT(*) as cnt FROM signals" + base + " AND runner_alerted = 1 AND status = 'win'",
+            mc_params,
         ).fetchone()["cnt"]
         runner_checked = conn.execute(
-            "SELECT COUNT(*) as cnt FROM signals WHERE runner_alerted = 1 AND status IN ('win','loss')"
+            "SELECT COUNT(*) as cnt FROM signals" + base + " AND runner_alerted = 1 AND status IN ('win','loss')",
+            mc_params,
         ).fetchone()["cnt"]
 
-        # Average return for runners
         avg_row = conn.execute(
-            "SELECT AVG(price_change_percent) as avg FROM signals WHERE runner_alerted = 1 AND price_change_percent IS NOT NULL"
+            "SELECT AVG(price_change_percent) as avg FROM signals" + base + " AND runner_alerted = 1 AND price_change_percent IS NOT NULL",
+            mc_params,
         ).fetchone()
 
     return {

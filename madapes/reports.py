@@ -64,6 +64,35 @@ async def check_signal_price(signal_row):
             return None
 
         original_price = safe_float(signal_row["original_price"])
+
+        # Auto-fill missing entry price from first available live data
+        if (not original_price or original_price <= 0) and current_data.get("price"):
+            original_price = float(current_data["price"])
+            try:
+                from db import get_connection
+                with get_connection() as conn:
+                    conn.execute(
+                        """UPDATE signals SET original_price = ?, original_market_cap = COALESCE(original_market_cap, ?),
+                           original_liquidity = COALESCE(original_liquidity, ?), original_volume = COALESCE(original_volume, ?)
+                        WHERE id = ? AND original_price IS NULL""",
+                        (original_price,
+                         float(current_data["fdv"]) if current_data.get("fdv") else None,
+                         float(current_data["liquidity"]) if current_data.get("liquidity") else None,
+                         float(current_data["volume_24h"]) if current_data.get("volume_24h") else None,
+                         signal_row["id"]),
+                    )
+                    conn.commit()
+                logger.info(f"Auto-filled entry price for signal {signal_row['id']}: ${original_price}")
+            except Exception as e:
+                logger.debug(f"Auto-fill entry price failed: {e}")
+            # On first fill, entry = current, so P&L is 0 — return neutral result
+            return {
+                "current_data": current_data,
+                "price_change": 0.0,
+                "multiplier": 1.0,
+                "is_winner": False,
+            }
+
         if not original_price or original_price <= 0:
             return None
 

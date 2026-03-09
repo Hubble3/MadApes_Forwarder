@@ -7,7 +7,7 @@ import time
 from telethon.errors import ChatAdminRequiredError
 from telethon.tl.types import Channel
 
-from madapes.runtime_settings import get_forward_delay, get_mc_threshold
+from madapes.runtime_settings import get_forward_delay, get_mc_threshold, get_min_market_cap
 from db import (
     claim_signal_if_new,
     delete_claim,
@@ -131,11 +131,24 @@ async def forward_message(message, chat, sender):
             if data:
                 dexscreener_data[f"{c}:{a}"] = data
 
+        # If primary token wasn't enriched via trading_links, try direct fetch
+        if not dexscreener_data:
+            data = await enrich_token(chain, address)
+            if data:
+                dexscreener_data[f"{chain}:{address}"] = data
+
         # Determine destination
         market_cap = None
         if dexscreener_data:
             first_data = list(dexscreener_data.values())[0]
             market_cap = first_data.get("fdv")
+
+        # Min market cap filter — skip signals below threshold
+        min_mc = get_min_market_cap()
+        if min_mc > 0 and market_cap is not None and market_cap < min_mc:
+            logger.info(f"Skipping message {message_id}: MC ${market_cap:,.0f} below min ${min_mc:,.0f}")
+            delete_claim(claim_id)
+            return False
 
         destination_type = None
         if market_cap is not None:

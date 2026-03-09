@@ -99,7 +99,15 @@ async def process_signal(
         first_data = list(dexscreener_data.values())[0]
         market_cap = first_data.get("fdv")
 
-    from madapes.runtime_settings import get_mc_threshold
+    from madapes.runtime_settings import get_mc_threshold, get_min_market_cap
+
+    # Min market cap filter — skip signals below threshold
+    min_mc = get_min_market_cap()
+    if min_mc > 0 and market_cap is not None and market_cap < min_mc:
+        logger.info(f"Signal filtered: MC ${market_cap:,.0f} below min ${min_mc:,.0f}")
+        delete_claim(signal_id)
+        return None
+
     if market_cap is not None:
         destination_type = "under_80k" if market_cap < get_mc_threshold() else "over_80k"
     else:

@@ -1,7 +1,7 @@
 'use client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { api, Signal } from './api';
+import { api, Signal, LivePrice } from './api';
 import { showToast } from '@/components/Toast';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
@@ -113,6 +113,14 @@ export function useSignal(id: number) {
     queryKey: ['signals', id],
     queryFn: () => api.signals.get(id),
     enabled: id > 0,
+  });
+}
+
+export function useLivePrices() {
+  return useQuery({
+    queryKey: ['live-prices'],
+    queryFn: () => api.signals.livePrices(),
+    refetchInterval: 30000,
   });
 }
 

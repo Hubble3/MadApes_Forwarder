@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useSignal } from '@/lib/hooks';
+import { useSignal, useLivePrices } from '@/lib/hooks';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import clsx from 'clsx';
@@ -22,6 +22,8 @@ export default function SignalDetailPage() {
   const queryClient = useQueryClient();
   const id = Number(params.id);
   const { data, isLoading, error } = useSignal(id);
+  const { data: livePriceData } = useLivePrices();
+  const livePrice = livePriceData?.prices?.[String(id)];
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const deleteMutation = useMutation({
@@ -54,24 +56,41 @@ export default function SignalDetailPage() {
   const s = data.signal;
   const chain = (s.chain || '').toLowerCase();
   const cc = chainConfig[chain] || { bg: 'bg-slate-500/15', text: 'text-slate-400' };
-  const pnl = s.price_change_percent;
+
+  // Use live data if available
+  const currentPrice = livePrice?.price ?? s.current_price;
+  const currentMC = livePrice?.market_cap ?? s.current_market_cap;
+
+  let pnl = s.price_change_percent;
+  let multiplier = s.multiplier;
+  if (livePrice?.price && s.original_price && s.original_price > 0) {
+    pnl = ((livePrice.price - s.original_price) / s.original_price) * 100;
+    multiplier = livePrice.price / s.original_price;
+  }
+
   const isWin = pnl !== null && pnl > 0;
   const isLoss = pnl !== null && pnl < 0;
+
+  // Dynamic status based on live P&L
+  let liveStatus = s.status;
+  if (pnl !== null && s.original_price) {
+    liveStatus = isWin ? 'win' : isLoss ? 'loss' : 'active';
+  }
 
   const detailRows = [
     { label: 'Token Address', value: s.token_address, mono: true },
     { label: 'Token Name', value: s.token_name || 'Unknown' },
     { label: 'Token Symbol', value: s.token_symbol || 'Unknown' },
     { label: 'Chain', value: chain.toUpperCase() },
-    { label: 'Status', value: s.status.toUpperCase() },
+    { label: 'Status', value: liveStatus.toUpperCase(), color: liveStatus === 'win' ? 'text-emerald-400' : liveStatus === 'loss' ? 'text-red-400' : undefined },
     { label: 'Entry Price', value: formatPrice(s.original_price), mono: true },
-    { label: 'Current Price', value: formatPrice(s.current_price), mono: true },
-    { label: 'Market Cap (Entry)', value: formatCurrency(s.original_market_cap) },
-    { label: 'Current Market Cap', value: formatCurrency(s.current_market_cap) },
-    { label: 'Liquidity', value: formatCurrency(s.original_liquidity) },
-    { label: 'Volume', value: formatCurrency(s.original_volume) },
+    { label: 'Live Price', value: formatPrice(currentPrice), mono: true, color: livePrice ? 'text-white' : undefined },
+    { label: 'Entry Market Cap', value: formatCurrency(s.original_market_cap) },
+    { label: 'Live Market Cap', value: formatCurrency(currentMC), color: livePrice ? 'text-white' : undefined },
+    { label: 'Liquidity', value: formatCurrency(livePrice?.liquidity ?? s.original_liquidity) },
+    { label: 'Volume 24h', value: formatCurrency(livePrice?.volume_24h ?? s.original_volume) },
     { label: 'P&L', value: pnl !== null ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%` : 'N/A', color: isWin ? 'text-emerald-400' : isLoss ? 'text-red-400' : undefined },
-    { label: 'Multiplier', value: s.multiplier !== null ? `${s.multiplier.toFixed(2)}x` : 'N/A' },
+    { label: 'Multiplier', value: multiplier !== null && multiplier !== undefined ? `${multiplier.toFixed(2)}x` : 'N/A' },
     { label: 'Caller', value: s.sender_name },
     { label: 'Source Group', value: s.source_group || 'N/A' },
     { label: 'Destination', value: s.destination_type || 'N/A' },
@@ -101,14 +120,20 @@ export default function SignalDetailPage() {
         </h1>
         <span className={clsx(
           'px-2 py-0.5 rounded text-[10px] font-bold tracking-wider',
-          s.status === 'win' && 'bg-emerald-500/15 text-emerald-400',
-          s.status === 'loss' && 'bg-red-500/15 text-red-400',
-          s.status === 'active' && 'bg-slate-500/15 text-slate-400',
+          liveStatus === 'win' && 'bg-emerald-500/15 text-emerald-400',
+          liveStatus === 'loss' && 'bg-red-500/15 text-red-400',
+          liveStatus === 'active' && 'bg-slate-500/15 text-slate-400',
         )}>
-          {s.status.toUpperCase()}
+          {liveStatus.toUpperCase()}
         </span>
         {s.runner_alerted === 1 && (
           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-500/20 text-orange-400">RUNNER</span>
+        )}
+        {livePrice && (
+          <span className="flex items-center gap-1 text-[10px] text-slate-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Live
+          </span>
         )}
       </div>
 
@@ -152,12 +177,12 @@ export default function SignalDetailPage() {
           isLoss && 'bg-red-500/5 border-red-500/20 glow-red',
           !isWin && !isLoss && 'bg-dark-700 border-dark-400/30',
         )}>
-          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Price Change</p>
+          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Price Change {livePrice ? '(Live)' : ''}</p>
           <p className={clsx('text-4xl font-bold font-mono', isWin ? 'text-emerald-400' : isLoss ? 'text-red-400' : 'text-white')}>
             {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
           </p>
-          {s.multiplier !== null && (
-            <p className="text-sm text-slate-500 mt-1">{s.multiplier.toFixed(2)}x multiplier</p>
+          {multiplier !== null && multiplier !== undefined && (
+            <p className="text-sm text-slate-500 mt-1">{multiplier.toFixed(2)}x multiplier</p>
           )}
         </div>
       )}
