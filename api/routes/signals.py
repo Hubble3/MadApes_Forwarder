@@ -79,12 +79,14 @@ async def signal_stats(api_key: str = Depends(verify_api_key)):
         active = conn.execute("SELECT COUNT(*) as cnt FROM signals WHERE status='active'").fetchone()["cnt"]
         wins = conn.execute("SELECT COUNT(*) as cnt FROM signals WHERE status='win'").fetchone()["cnt"]
         losses = conn.execute("SELECT COUNT(*) as cnt FROM signals WHERE status='loss'").fetchone()["cnt"]
+    checked = wins + losses
     return {
         "total": total,
         "active": active,
         "wins": wins,
         "losses": losses,
-        "win_rate": round((wins / (wins + losses) * 100) if (wins + losses) > 0 else 0, 1),
+        "checked": checked,
+        "win_rate": round((wins / checked * 100) if checked > 0 else 0, 1),
     }
 
 

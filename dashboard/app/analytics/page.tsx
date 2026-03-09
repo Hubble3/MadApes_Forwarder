@@ -43,10 +43,10 @@ export default function AnalyticsPage() {
   const dailyData = daily?.days
     ? [...daily.days].reverse().map((d: any) => ({
         date: d.report_date?.slice(5) || '',
-        signals: d.total_signals || 0,
-        wins: d.wins || 0,
-        losses: d.losses || 0,
-        winRate: d.win_rate || 0,
+        signals: d.total_signals ?? 0,
+        wins: d.wins ?? 0,
+        losses: d.losses ?? 0,
+        winRate: d.win_rate ?? 0,
       }))
     : [];
 

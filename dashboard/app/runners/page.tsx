@@ -36,7 +36,7 @@ export default function RunnersPage() {
           />
           <StatCard
             label="Avg Return"
-            value={`${stats.runner_avg_return >= 0 ? '+' : ''}${stats.runner_avg_return}%`}
+            value={`${stats.runner_avg_return >= 0 ? '+' : ''}${Number(stats.runner_avg_return).toFixed(1)}%`}
             color={stats.runner_avg_return >= 0 ? 'green' : 'red'}
           />
         </div>

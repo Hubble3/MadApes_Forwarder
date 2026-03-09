@@ -28,6 +28,7 @@ RUNNER_ANALYTICS_MIGRATIONS = [
     ("day_of_week", "INTEGER"),
     ("session", "TEXT"),
     ("outcome", "TEXT"),
+    ("strategy", "TEXT"),
 ]
 
 
@@ -90,7 +91,10 @@ def init_database(max_signals=100):
                 price_change_6h REAL,
                 multiplier_6h REAL,
                 original_dexscreener_link TEXT,
-                signal_link TEXT
+                signal_link TEXT,
+                confidence_score REAL,
+                safety_score REAL,
+                tags TEXT
             )
         """)
 
@@ -128,6 +132,16 @@ def init_database(max_signals=100):
             if col not in existing_cols:
                 cursor.execute(f"ALTER TABLE signals ADD COLUMN {col} {col_type}")
 
+        # Dashboard columns migration
+        dashboard_migrations = [
+            ("confidence_score", "REAL"),
+            ("safety_score", "REAL"),
+            ("tags", "TEXT"),
+        ]
+        for col, col_type in dashboard_migrations:
+            if col not in existing_cols:
+                cursor.execute(f"ALTER TABLE signals ADD COLUMN {col} {col_type}")
+
         for col, col_type in RUNNER_ANALYTICS_MIGRATIONS:
             if col not in existing_cols:
                 cursor.execute(f"ALTER TABLE signals ADD COLUMN {col} {col_type}")
@@ -145,6 +159,42 @@ def init_database(max_signals=100):
                 best_hour INTEGER,
                 observation TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Management/settings tables
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS blocked_callers (
+                sender_id INTEGER PRIMARY KEY,
+                sender_name TEXT,
+                reason TEXT,
+                blocked_at TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contract_blacklist (
+                address TEXT PRIMARY KEY,
+                chain TEXT,
+                reason TEXT,
+                added_at TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS signal_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id INTEGER,
+                note TEXT,
+                created_at TEXT
             )
         """)
 

@@ -25,12 +25,20 @@ async def daily_analytics(
             "SELECT * FROM analytics_daily ORDER BY report_date DESC LIMIT ?",
             (limit,),
         ).fetchall()
-    return {
-        "days": [
-            {key: row[key] for key in row.keys()}
-            for row in rows
-        ]
-    }
+    days = []
+    for row in rows:
+        d = {key: row[key] for key in row.keys()}
+        # Rename DB columns to frontend-expected names
+        if "win_count" in d:
+            d["wins"] = d.pop("win_count")
+        if "loss_count" in d:
+            d["losses"] = d.pop("loss_count")
+        wins = d.get("wins", 0) or 0
+        losses = d.get("losses", 0) or 0
+        checked = wins + losses
+        d["win_rate"] = round((wins / checked * 100) if checked > 0 else 0, 1)
+        days.append(d)
+    return {"days": days}
 
 
 @router.get("/overview")
@@ -65,6 +73,7 @@ async def overview(api_key: str = Depends(verify_api_key)):
         "wins": wins,
         "losses": losses,
         "runners": runners,
+        "checked_signals": checked,
         "win_rate": round((wins / checked * 100) if checked > 0 else 0, 1),
         "today_signals": today_count,
         "chains": {r["chain"]: r["cnt"] for r in chain_rows},

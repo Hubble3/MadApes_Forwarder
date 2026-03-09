@@ -80,6 +80,7 @@ export interface Overview {
   runners: number;
   win_rate: number;
   today_signals: number;
+  checked_signals?: number;
   chains: Record<string, number>;
 }
 
@@ -150,5 +151,37 @@ export const api = {
     list: (limit = 20) =>
       fetchApi<{ runners: Signal[] }>(`/api/runners/?limit=${limit}`),
     stats: () => fetchApi<any>('/api/runners/stats'),
+  },
+
+  settings: {
+    get: () => fetchApi<any>('/api/settings/'),
+    update: (data: Record<string, any>) =>
+      fetchApi<any>('/api/settings/', { method: 'POST', body: JSON.stringify(data) }),
+    health: () => fetchApi<any>('/api/settings/health'),
+    blockedCallers: () => fetchApi<any>('/api/settings/callers/blocked'),
+    blockCaller: (sender_id: number, sender_name: string, reason: string) =>
+      fetchApi<any>('/api/settings/callers/block', { method: 'POST', body: JSON.stringify({ sender_id, sender_name, reason }) }),
+    unblockCaller: (sender_id: number) =>
+      fetchApi<any>('/api/settings/callers/unblock', { method: 'POST', body: JSON.stringify({ sender_id }) }),
+    boostCaller: (sender_id: number, multiplier: number) =>
+      fetchApi<any>('/api/settings/callers/boost', { method: 'POST', body: JSON.stringify({ sender_id, multiplier }) }),
+    blacklist: () => fetchApi<any>('/api/settings/blacklist'),
+    addBlacklist: (address: string, chain: string, reason: string) =>
+      fetchApi<any>('/api/settings/blacklist', { method: 'POST', body: JSON.stringify({ address, chain, reason }) }),
+    removeBlacklist: (address: string) =>
+      fetchApi<any>(`/api/settings/blacklist/${address}`, { method: 'DELETE' }),
+    exportSignals: () => fetchApi<any>('/api/settings/export/signals'),
+    exportCallers: () => fetchApi<any>('/api/settings/export/callers'),
+    overrideSignalStatus: (signal_id: number, new_status: string) =>
+      fetchApi<any>(`/api/settings/signals/${signal_id}/status`, { method: 'POST', body: JSON.stringify({ new_status }) }),
+    addSignalNote: (signal_id: number, note: string) =>
+      fetchApi<any>(`/api/settings/signals/${signal_id}/note`, { method: 'POST', body: JSON.stringify({ note }) }),
+  },
+
+  strategies: {
+    list: () => fetchApi<{ strategies: any[] }>('/api/strategies/'),
+    evaluate: (signal_id: number) =>
+      fetchApi<any>('/api/strategies/evaluate', { method: 'POST', body: JSON.stringify({ signal_id }) }),
+    performance: () => fetchApi<any>('/api/strategies/performance'),
   },
 };

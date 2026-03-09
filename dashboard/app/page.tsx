@@ -32,6 +32,7 @@ export default function DashboardHome() {
             label="Win Rate"
             value={`${overview?.win_rate ?? 0}%`}
             color={(overview?.win_rate ?? 0) >= 50 ? 'green' : 'red'}
+            subtext={overview?.checked_signals ? `${overview.checked_signals} checked` : undefined}
           />
           <StatCard label="Runners" value={overview?.runners ?? 0} color="yellow" />
           <StatCard

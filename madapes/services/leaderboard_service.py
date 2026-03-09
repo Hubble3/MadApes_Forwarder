@@ -60,9 +60,9 @@ def get_caller_leaderboard(window_days: int = 0, limit: int = 20) -> List[dict]:
             "losses": r["losses"] or 0,
             "runners": r["runners"] or 0,
             "win_rate": round(win_rate, 1),
-            "avg_return": round(r["avg_return"] or 0, 2),
-            "best_return": round(r["best_return"] or 0, 2),
-            "worst_return": round(r["worst_return"] or 0, 2),
+            "avg_return": round(r["avg_return"], 2) if r["avg_return"] is not None else None,
+            "best_return": round(r["best_return"], 2) if r["best_return"] is not None else None,
+            "worst_return": round(r["worst_return"], 2) if r["worst_return"] is not None else None,
         })
     return leaderboard
 

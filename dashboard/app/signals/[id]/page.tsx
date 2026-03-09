@@ -3,6 +3,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useSignal } from '@/lib/hooks';
 import clsx from 'clsx';
+import { formatPrice, formatCurrency, formatTime, shortAddr } from '@/lib/format';
 
 const chainConfig: Record<string, { bg: string; text: string }> = {
   solana: { bg: 'bg-purple-500/15', text: 'text-purple-400' },
@@ -10,30 +11,6 @@ const chainConfig: Record<string, { bg: string; text: string }> = {
   bsc: { bg: 'bg-yellow-500/15', text: 'text-yellow-400' },
   base: { bg: 'bg-sky-500/15', text: 'text-sky-400' },
 };
-
-function formatPrice(price: number | null | undefined): string {
-  if (price === null || price === undefined) return 'N/A';
-  if (price < 0.0001) return `$${price.toExponential(2)}`;
-  if (price < 1) return `$${price.toFixed(8)}`;
-  return `$${price.toFixed(4)}`;
-}
-
-function formatCurrency(value: number | null | undefined): string {
-  if (value === null || value === undefined) return 'N/A';
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  return `$${value.toFixed(0)}`;
-}
-
-function formatTime(timestamp: string | null | undefined): string {
-  if (!timestamp) return 'N/A';
-  return new Date(timestamp).toLocaleString();
-}
-
-function shortAddr(addr: string): string {
-  if (!addr || addr.length < 12) return addr || '';
-  return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
-}
 
 export default function SignalDetailPage() {
   const params = useParams();

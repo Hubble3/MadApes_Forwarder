@@ -95,7 +95,7 @@ def update_position(signal_id: int, current_price: float):
                 return
 
             entry_price = row["entry_price"]
-            peak_price = row["peak_price"] or entry_price
+            peak_price = row["peak_price"] if row["peak_price"] is not None else entry_price
             position_size = row["position_size"]
 
             # Update peak

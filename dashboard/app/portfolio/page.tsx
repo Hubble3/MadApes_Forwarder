@@ -5,13 +5,7 @@ import { usePortfolioSummary } from '@/lib/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import clsx from 'clsx';
-
-function formatPrice(price: number | null | undefined): string {
-  if (price === null || price === undefined) return 'N/A';
-  if (price < 0.0001) return `$${price.toExponential(2)}`;
-  if (price < 1) return `$${price.toFixed(6)}`;
-  return `$${price.toFixed(4)}`;
-}
+import { formatPrice } from '@/lib/format';
 
 export default function PortfolioPage() {
   const { data: summary, isLoading } = usePortfolioSummary();
@@ -100,10 +94,10 @@ export default function PortfolioPage() {
                     <td className="px-3 py-3 font-mono text-xs text-slate-400">{formatPrice(pos.entry_price)}</td>
                     <td className="px-3 py-3 font-mono text-xs text-slate-400">{formatPrice(pos.current_price)}</td>
                     <td className={clsx('px-3 py-3 font-mono text-xs font-medium', (pos.unrealized_pnl_pct || 0) >= 0 ? 'text-emerald-400' : 'text-red-400')}>
-                      {(pos.unrealized_pnl_pct || 0) >= 0 ? '+' : ''}{pos.unrealized_pnl_pct?.toFixed(1)}%
-                      <span className="text-slate-600 ml-1">(${pos.unrealized_pnl?.toFixed(2)})</span>
+                      {(pos.unrealized_pnl_pct || 0) >= 0 ? '+' : ''}{(pos.unrealized_pnl_pct ?? 0).toFixed(1)}%
+                      <span className="text-slate-600 ml-1">(${(pos.unrealized_pnl ?? 0).toFixed(2)})</span>
                     </td>
-                    <td className="px-3 py-3 font-mono text-xs text-red-400/60">{pos.max_drawdown_pct?.toFixed(1)}%</td>
+                    <td className="px-3 py-3 font-mono text-xs text-red-400/60">{(pos.max_drawdown_pct ?? 0).toFixed(1)}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -145,8 +139,8 @@ export default function PortfolioPage() {
                     <td className="px-3 py-3 font-mono text-xs text-slate-400">{formatPrice(pos.entry_price)}</td>
                     <td className="px-3 py-3 font-mono text-xs text-slate-400">{formatPrice(pos.exit_price)}</td>
                     <td className={clsx('px-3 py-3 font-mono text-xs font-medium', (pos.realized_pnl_pct || 0) >= 0 ? 'text-emerald-400' : 'text-red-400')}>
-                      {(pos.realized_pnl_pct || 0) >= 0 ? '+' : ''}{pos.realized_pnl_pct?.toFixed(1)}%
-                      <span className="text-slate-600 ml-1">(${pos.realized_pnl?.toFixed(2)})</span>
+                      {(pos.realized_pnl_pct || 0) >= 0 ? '+' : ''}{(pos.realized_pnl_pct ?? 0).toFixed(1)}%
+                      <span className="text-slate-600 ml-1">(${(pos.realized_pnl ?? 0).toFixed(2)})</span>
                     </td>
                   </tr>
                 ))}

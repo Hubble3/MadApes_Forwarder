@@ -11,7 +11,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import init_database
-from api.routes import signals, callers, portfolio, analytics, leaderboard, runners, webhooks, ml
+from api.routes import signals, callers, portfolio, analytics, leaderboard, runners, webhooks, ml, settings, strategies
 from api.websocket import websocket_endpoint
 
 
@@ -48,6 +48,8 @@ app.include_router(leaderboard.router, prefix="/api/leaderboard", tags=["leaderb
 app.include_router(runners.router, prefix="/api/runners", tags=["runners"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
 app.include_router(ml.router, prefix="/api/ml", tags=["ml"])
+app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
+app.include_router(strategies.router, prefix="/api/strategies", tags=["strategies"])
 
 
 @app.websocket("/ws")

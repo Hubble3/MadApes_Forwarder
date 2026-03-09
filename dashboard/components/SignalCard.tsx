@@ -2,6 +2,7 @@
 import type { Signal } from '@/lib/api';
 import Link from 'next/link';
 import clsx from 'clsx';
+import { formatPrice, formatCurrency, timeAgo } from '@/lib/format';
 
 const chainConfig: Record<string, { bg: string; text: string; dot: string }> = {
   solana: { bg: 'bg-purple-500/15', text: 'text-purple-400', dot: 'bg-purple-400' },
@@ -17,30 +18,6 @@ const statusConfig: Record<string, { bg: string; text: string; label: string }> 
   win: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: 'WIN' },
   loss: { bg: 'bg-red-500/15', text: 'text-red-400', label: 'LOSS' },
 };
-
-function formatPrice(price: number | null): string {
-  if (price === null || price === undefined) return 'N/A';
-  if (price < 0.0001) return `$${price.toExponential(2)}`;
-  if (price < 1) return `$${price.toFixed(6)}`;
-  return `$${price.toFixed(2)}`;
-}
-
-function formatCurrency(value: number | null): string {
-  if (value === null || value === undefined) return 'N/A';
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  return `$${value.toFixed(0)}`;
-}
-
-function timeAgo(timestamp: string): string {
-  const diff = Date.now() - new Date(timestamp).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 export default function SignalCard({ signal }: { signal: Signal }) {
   const chain = (signal.chain || '').toLowerCase();
