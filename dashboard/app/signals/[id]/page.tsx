@@ -1,7 +1,10 @@
 'use client';
-import { useParams } from 'next/navigation';
+import { useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSignal } from '@/lib/hooks';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 import clsx from 'clsx';
 import { formatPrice, formatCurrency, formatTime, shortAddr } from '@/lib/format';
 
@@ -15,8 +18,20 @@ const chainConfig: Record<string, { bg: string; text: string }> = {
 
 export default function SignalDetailPage() {
   const params = useParams();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const id = Number(params.id);
   const { data, isLoading, error } = useSignal(id);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.settings.deleteSignal(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['signals'] });
+      queryClient.invalidateQueries({ queryKey: ['overview'] });
+      router.push('/signals');
+    },
+  });
 
   if (isLoading) {
     return (
@@ -165,6 +180,41 @@ export default function SignalDetailPage() {
               </span>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Delete Signal */}
+      <div className="bg-dark-700 rounded-xl border border-red-500/20 p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-red-400">Delete Signal</h2>
+            <p className="text-xs text-slate-600 mt-0.5">Remove this signal permanently from the database</p>
+          </div>
+          {!confirmDelete ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="px-4 py-2 bg-red-500/10 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/20 transition-colors border border-red-500/20"
+            >
+              Delete
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-red-400">Are you sure?</span>
+              <button
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 bg-red-500/20 text-red-400 text-sm font-bold rounded-lg hover:bg-red-500/30 transition-colors disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-3 py-2 text-slate-400 text-sm rounded-lg hover:bg-dark-600 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

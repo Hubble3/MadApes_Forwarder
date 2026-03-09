@@ -1,8 +1,14 @@
 export function formatPrice(price: number | null | undefined): string {
   if (price === null || price === undefined) return 'N/A';
-  if (price < 0.0001) return `$${price.toExponential(2)}`;
-  if (price < 1) return `$${price.toFixed(6)}`;
-  return `$${price.toFixed(2)}`;
+  if (price === 0) return '$0';
+  if (price >= 1) return `$${price.toFixed(2)}`;
+  // For small prices: find significant digits and show them
+  // e.g. 0.0000108 → $0.00001080, 0.00296 → $0.002960
+  const str = price.toFixed(20);
+  const match = str.match(/^0\.(0*)/);
+  const leadingZeros = match ? match[1].length : 0;
+  const decimals = Math.max(leadingZeros + 4, 6);
+  return `$${price.toFixed(decimals)}`;
 }
 
 export function formatCurrency(value: number | null | undefined): string {

@@ -173,6 +173,8 @@ export const api = {
       fetchApi<any>(`/api/settings/blacklist/${address}`, { method: 'DELETE' }),
     exportSignals: () => fetchApi<any>('/api/settings/export/signals'),
     exportCallers: () => fetchApi<any>('/api/settings/export/callers'),
+    deleteSignal: (signal_id: number) =>
+      fetchApi<any>(`/api/settings/signals/${signal_id}`, { method: 'DELETE' }),
     overrideSignalStatus: (signal_id: number, new_status: string) =>
       fetchApi<any>(`/api/settings/signals/${signal_id}/status`, { method: 'POST', body: JSON.stringify({ new_status }) }),
     addSignalNote: (signal_id: number, note: string) =>

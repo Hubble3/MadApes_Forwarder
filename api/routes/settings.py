@@ -322,6 +322,20 @@ async def override_signal_status(signal_id: int, body: SignalStatusOverride, api
     return {"status": "updated", "signal_id": signal_id, "new_status": body.new_status}
 
 
+@router.delete("/signals/{signal_id}")
+async def delete_signal(signal_id: int, api_key: str = Depends(verify_api_key)):
+    """Delete a signal from the database."""
+    row = get_signal_by_id(signal_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Signal not found")
+
+    with get_connection() as conn:
+        conn.execute("DELETE FROM signal_notes WHERE signal_id = ?", (signal_id,))
+        conn.execute("DELETE FROM signals WHERE id = ?", (signal_id,))
+        conn.commit()
+    return {"status": "deleted", "signal_id": signal_id}
+
+
 @router.post("/signals/{signal_id}/note")
 async def add_signal_note(signal_id: int, body: SignalNoteRequest, api_key: str = Depends(verify_api_key)):
     """Add a note to a signal."""
