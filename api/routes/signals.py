@@ -19,6 +19,7 @@ async def list_signals(
     status: Optional[str] = Query(None, description="Filter by status: active, win, loss"),
     chain: Optional[str] = Query(None),
     sender_id: Optional[int] = Query(None),
+    search: Optional[str] = Query(None, description="Search by token name, symbol, or address"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     api_key: str = Depends(verify_api_key),
@@ -36,6 +37,10 @@ async def list_signals(
         if sender_id:
             query += " AND sender_id = ?"
             params.append(sender_id)
+        if search:
+            query += " AND (token_name LIKE ? OR token_symbol LIKE ? OR token_address LIKE ?)"
+            term = f"%{search}%"
+            params.extend([term, term, term])
         query += " ORDER BY original_timestamp DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         rows = conn.execute(query, params).fetchall()
@@ -88,5 +93,5 @@ async def get_signal(signal_id: int, api_key: str = Depends(verify_api_key)):
     """Get a specific signal by ID."""
     row = get_signal_by_id(signal_id)
     if not row:
-        return {"error": "Signal not found"}, 404
+        return {"error": "Signal not found"}
     return {"signal": _row_to_dict(row)}

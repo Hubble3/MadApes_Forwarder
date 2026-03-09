@@ -1,8 +1,17 @@
 'use client';
 import StatCard from '@/components/StatCard';
+import { SkeletonCard } from '@/components/Skeleton';
 import { usePortfolioSummary } from '@/lib/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import clsx from 'clsx';
+
+function formatPrice(price: number | null | undefined): string {
+  if (price === null || price === undefined) return 'N/A';
+  if (price < 0.0001) return `$${price.toExponential(2)}`;
+  if (price < 1) return `$${price.toFixed(6)}`;
+  return `$${price.toFixed(4)}`;
+}
 
 export default function PortfolioPage() {
   const { data: summary, isLoading } = usePortfolioSummary();
@@ -17,14 +26,21 @@ export default function PortfolioPage() {
     refetchInterval: 30000,
   });
 
-  if (isLoading) return <div className="text-slate-400">Loading portfolio...</div>;
-
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Portfolio</h1>
+    <div className="space-y-8">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-white tracking-tight">Portfolio</h1>
+        <p className="text-sm text-slate-500 mt-1">Virtual portfolio tracking ($100 per signal)</p>
+      </div>
 
-      {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      {/* Stats */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      ) : summary ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <StatCard
             label="Total P&L"
             value={`$${summary.total_pnl.toFixed(2)}`}
@@ -40,73 +56,97 @@ export default function PortfolioPage() {
             value={`$${summary.total_realized_pnl.toFixed(2)}`}
             color={summary.total_realized_pnl >= 0 ? 'green' : 'red'}
           />
-          <StatCard label="Win Rate" value={`${summary.win_rate}%`} color="green" />
-          <StatCard label="Open" value={summary.total_open} color="blue" />
-          <StatCard label="Max Drawdown" value={`${summary.max_drawdown_pct}%`} color="red" />
+          <StatCard label="Win Rate" value={`${summary.win_rate}%`} color="green" subtext={`${summary.wins}W / ${summary.losses}L`} />
+          <StatCard label="Open Positions" value={summary.total_open} color="blue" />
+          <StatCard label="Max Drawdown" value={`${summary.max_drawdown_pct.toFixed(1)}%`} color="red" />
         </div>
-      )}
+      ) : null}
 
       {/* Open Positions */}
-      <div>
-        <h2 className="text-lg font-semibold mb-3">Open Positions</h2>
+      <div className="bg-dark-700 rounded-xl border border-dark-400/30 overflow-hidden">
+        <div className="px-5 py-4 border-b border-dark-400/30">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse-dot" />
+            <h2 className="text-sm font-semibold text-slate-300">Open Positions</h2>
+            {openData?.positions && (
+              <span className="text-[10px] text-slate-600 ml-1">({openData.positions.length})</span>
+            )}
+          </div>
+        </div>
         {openData?.positions && openData.positions.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-slate-500 border-b border-[#334155]">
-                  <th className="pb-2">Token</th>
-                  <th className="pb-2">Chain</th>
-                  <th className="pb-2">Entry</th>
-                  <th className="pb-2">Current</th>
-                  <th className="pb-2">P&L</th>
-                  <th className="pb-2">Drawdown</th>
+                <tr className="text-left text-[10px] text-slate-600 uppercase tracking-wider">
+                  <th className="px-5 py-3">Token</th>
+                  <th className="px-3 py-3">Chain</th>
+                  <th className="px-3 py-3">Entry Price</th>
+                  <th className="px-3 py-3">Current Price</th>
+                  <th className="px-3 py-3">P&L</th>
+                  <th className="px-3 py-3">Drawdown</th>
                 </tr>
               </thead>
               <tbody>
                 {openData.positions.map((pos: any) => (
-                  <tr key={pos.id} className="border-b border-[#334155]/50">
-                    <td className="py-2">{pos.token_symbol || pos.token_address?.slice(0, 8)}</td>
-                    <td className="py-2 text-xs text-slate-400">{(pos.chain || '').toUpperCase()}</td>
-                    <td className="py-2">${pos.entry_price?.toFixed(6)}</td>
-                    <td className="py-2">${pos.current_price?.toFixed(6)}</td>
-                    <td className={`py-2 ${(pos.unrealized_pnl_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {pos.unrealized_pnl_pct?.toFixed(1)}% (${pos.unrealized_pnl?.toFixed(2)})
+                  <tr key={pos.id} className="border-t border-dark-400/20 table-row-hover transition-colors">
+                    <td className="px-5 py-3 font-medium text-white">
+                      {pos.token_symbol || pos.token_address?.slice(0, 8)}
                     </td>
-                    <td className="py-2 text-red-400">{pos.max_drawdown_pct?.toFixed(1)}%</td>
+                    <td className="px-3 py-3">
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase">
+                        {(pos.chain || '').toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 font-mono text-xs text-slate-400">{formatPrice(pos.entry_price)}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-slate-400">{formatPrice(pos.current_price)}</td>
+                    <td className={clsx('px-3 py-3 font-mono text-xs font-medium', (pos.unrealized_pnl_pct || 0) >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                      {(pos.unrealized_pnl_pct || 0) >= 0 ? '+' : ''}{pos.unrealized_pnl_pct?.toFixed(1)}%
+                      <span className="text-slate-600 ml-1">(${pos.unrealized_pnl?.toFixed(2)})</span>
+                    </td>
+                    <td className="px-3 py-3 font-mono text-xs text-red-400/60">{pos.max_drawdown_pct?.toFixed(1)}%</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="text-slate-500">No open positions.</p>
+          <div className="py-8 text-center text-sm text-slate-600">No open positions.</div>
         )}
       </div>
 
       {/* Closed Positions */}
-      <div>
-        <h2 className="text-lg font-semibold mb-3">Recent Closed</h2>
+      <div className="bg-dark-700 rounded-xl border border-dark-400/30 overflow-hidden">
+        <div className="px-5 py-4 border-b border-dark-400/30">
+          <h2 className="text-sm font-semibold text-slate-300">Recently Closed</h2>
+        </div>
         {closedData?.positions && closedData.positions.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-slate-500 border-b border-[#334155]">
-                  <th className="pb-2">Token</th>
-                  <th className="pb-2">Chain</th>
-                  <th className="pb-2">Entry</th>
-                  <th className="pb-2">Exit</th>
-                  <th className="pb-2">P&L</th>
+                <tr className="text-left text-[10px] text-slate-600 uppercase tracking-wider">
+                  <th className="px-5 py-3">Token</th>
+                  <th className="px-3 py-3">Chain</th>
+                  <th className="px-3 py-3">Entry</th>
+                  <th className="px-3 py-3">Exit</th>
+                  <th className="px-3 py-3">P&L</th>
                 </tr>
               </thead>
               <tbody>
                 {closedData.positions.map((pos: any) => (
-                  <tr key={pos.id} className="border-b border-[#334155]/50">
-                    <td className="py-2">{pos.token_symbol || pos.token_address?.slice(0, 8)}</td>
-                    <td className="py-2 text-xs text-slate-400">{(pos.chain || '').toUpperCase()}</td>
-                    <td className="py-2">${pos.entry_price?.toFixed(6)}</td>
-                    <td className="py-2">${pos.exit_price?.toFixed(6)}</td>
-                    <td className={`py-2 ${(pos.realized_pnl_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {pos.realized_pnl_pct?.toFixed(1)}% (${pos.realized_pnl?.toFixed(2)})
+                  <tr key={pos.id} className="border-t border-dark-400/20 table-row-hover transition-colors">
+                    <td className="px-5 py-3 font-medium text-white">
+                      {pos.token_symbol || pos.token_address?.slice(0, 8)}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase">
+                        {(pos.chain || '').toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 font-mono text-xs text-slate-400">{formatPrice(pos.entry_price)}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-slate-400">{formatPrice(pos.exit_price)}</td>
+                    <td className={clsx('px-3 py-3 font-mono text-xs font-medium', (pos.realized_pnl_pct || 0) >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                      {(pos.realized_pnl_pct || 0) >= 0 ? '+' : ''}{pos.realized_pnl_pct?.toFixed(1)}%
+                      <span className="text-slate-600 ml-1">(${pos.realized_pnl?.toFixed(2)})</span>
                     </td>
                   </tr>
                 ))}
@@ -114,7 +154,7 @@ export default function PortfolioPage() {
             </table>
           </div>
         ) : (
-          <p className="text-slate-500">No closed positions yet.</p>
+          <div className="py-8 text-center text-sm text-slate-600">No closed positions yet.</div>
         )}
       </div>
     </div>

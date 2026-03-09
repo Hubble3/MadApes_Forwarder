@@ -1,6 +1,8 @@
 """API authentication - API key based."""
 import os
 import secrets
+from dotenv import load_dotenv
+load_dotenv()
 from functools import wraps
 
 from fastapi import Depends, HTTPException, Security

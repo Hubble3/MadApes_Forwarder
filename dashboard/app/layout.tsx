@@ -1,42 +1,138 @@
-import type { Metadata } from 'next';
+'use client';
 import './globals.css';
 import { Providers } from './providers';
-
-export const metadata: Metadata = {
-  title: 'MadApes Signal Intelligence',
-  description: 'Crypto signal intelligence dashboard',
-};
+import { usePathname } from 'next/navigation';
+import Link from 'next/link';
+import clsx from 'clsx';
 
 const navItems = [
-  { href: '/', label: 'Dashboard' },
-  { href: '/signals', label: 'Signals' },
-  { href: '/callers', label: 'Callers' },
-  { href: '/portfolio', label: 'Portfolio' },
-  { href: '/runners', label: 'Runners' },
+  { href: '/', label: 'Dashboard', icon: DashboardIcon },
+  { href: '/signals', label: 'Signals', icon: SignalIcon },
+  { href: '/callers', label: 'Callers', icon: CallerIcon },
+  { href: '/portfolio', label: 'Portfolio', icon: PortfolioIcon },
+  { href: '/runners', label: 'Runners', icon: RunnerIcon },
+  { href: '/analytics', label: 'Analytics', icon: AnalyticsIcon },
 ];
 
+function DashboardIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+    </svg>
+  );
+}
+
+function SignalIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.348 14.651a3.75 3.75 0 010-5.303m5.304 0a3.75 3.75 0 010 5.303m-7.425 2.122a6.75 6.75 0 010-9.546m9.546 0a6.75 6.75 0 010 9.546M5.106 18.894c-3.808-3.808-3.808-9.98 0-13.789m13.788 0c3.808 3.808 3.808 9.981 0 13.79M12 12h.008v.007H12V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+    </svg>
+  );
+}
+
+function CallerIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+    </svg>
+  );
+}
+
+function PortfolioIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
+    </svg>
+  );
+}
+
+function AnalyticsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+    </svg>
+  );
+}
+
+function RunnerIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+    </svg>
+  );
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
   return (
     <html lang="en">
-      <body className="min-h-screen">
+      <head>
+        <title>MadApes Signal Intelligence</title>
+        <meta name="description" content="Crypto signal intelligence dashboard" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+      </head>
+      <body className="min-h-screen font-[Inter]">
         <Providers>
-          <nav className="bg-[#1e293b] border-b border-[#334155] px-6 py-3">
-            <div className="max-w-7xl mx-auto flex items-center justify-between">
-              <span className="text-lg font-bold text-white">MadApes Intelligence</span>
-              <div className="flex gap-6">
-                {navItems.map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    className="text-sm text-slate-400 hover:text-white transition-colors"
-                  >
-                    {item.label}
-                  </a>
-                ))}
+          <div className="flex h-screen overflow-hidden">
+            {/* Sidebar */}
+            <aside className="w-64 bg-dark-800 border-r border-dark-400/50 flex flex-col shrink-0">
+              {/* Logo */}
+              <div className="p-5 border-b border-dark-400/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">MA</span>
+                  </div>
+                  <div>
+                    <h1 className="text-sm font-bold text-white tracking-tight">MadApes</h1>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest">Intelligence</p>
+                  </div>
+                </div>
               </div>
-            </div>
-          </nav>
-          <main className="max-w-7xl mx-auto px-6 py-6">{children}</main>
+
+              {/* Nav */}
+              <nav className="flex-1 p-3 space-y-1">
+                {navItems.map((item) => {
+                  const active = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={clsx(
+                        'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
+                        active
+                          ? 'bg-blue-500/10 text-blue-400 shadow-sm'
+                          : 'text-slate-400 hover:text-white hover:bg-dark-600'
+                      )}
+                    >
+                      <item.icon className={clsx('w-5 h-5', active ? 'text-blue-400' : 'text-slate-500')} />
+                      {item.label}
+                      {active && (
+                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse-dot" />
+                      )}
+                    </Link>
+                  );
+                })}
+              </nav>
+
+              {/* Status footer */}
+              <div className="p-4 border-t border-dark-400/50">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-dot" />
+                  <span className="text-xs text-slate-500">Bot Online</span>
+                </div>
+              </div>
+            </aside>
+
+            {/* Main Content */}
+            <main className="flex-1 overflow-y-auto">
+              <div className="max-w-[1400px] mx-auto px-8 py-6">
+                {children}
+              </div>
+            </main>
+          </div>
         </Providers>
       </body>
     </html>

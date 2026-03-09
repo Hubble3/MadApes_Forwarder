@@ -3,19 +3,98 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-card: #1e293b;
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #111827;
+  --bg-card: #151c2e;
+  --bg-card-hover: #1a2338;
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
-  --accent-green: #22c55e;
+  --accent-green: #10b981;
   --accent-red: #ef4444;
   --accent-blue: #3b82f6;
-  --accent-yellow: #eab308;
-  --border: #334155;
+  --accent-yellow: #f59e0b;
+  --accent-purple: #8b5cf6;
+  --border: #1e293b;
+  --border-light: #334155;
 }
 
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Glow effects */
+.glow-green {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+}
+.glow-red {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+}
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.15);
+}
+.glow-yellow {
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
+}
+.glow-purple {
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.15);
+}
+
+/* Animated gradient border */
+.gradient-border {
+  position: relative;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(139, 92, 246, 0.3), rgba(16, 185, 129, 0.3));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Pulse animation for active items */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Shimmer loading effect */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.animate-shimmer {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Table hover rows */
+.table-row-hover:hover {
+  background-color: rgba(59, 130, 246, 0.05);
 }

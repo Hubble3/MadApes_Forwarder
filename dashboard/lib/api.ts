@@ -27,6 +27,9 @@ export interface Signal {
   original_price: number | null;
   current_price: number | null;
   original_market_cap: number | null;
+  current_market_cap: number | null;
+  original_liquidity: number | null;
+  original_volume: number | null;
   price_change_percent: number | null;
   multiplier: number | null;
   sender_name: string;
@@ -35,6 +38,9 @@ export interface Signal {
   original_timestamp: string;
   runner_alerted: number;
   destination_type: string | null;
+  confidence_score: number | null;
+  safety_score: number | null;
+  tags: string | null;
 }
 
 export interface Caller {
@@ -96,10 +102,11 @@ export const api = {
   health: () => fetchApi<{ status: string }>('/api/health'),
 
   signals: {
-    list: (params?: { status?: string; chain?: string; limit?: number; offset?: number }) => {
+    list: (params?: { status?: string; chain?: string; search?: string; limit?: number; offset?: number }) => {
       const qs = new URLSearchParams();
       if (params?.status) qs.set('status', params.status);
       if (params?.chain) qs.set('chain', params.chain);
+      if (params?.search) qs.set('search', params.search);
       if (params?.limit) qs.set('limit', String(params.limit));
       if (params?.offset) qs.set('offset', String(params.offset));
       return fetchApi<{ signals: Signal[]; total: number }>(`/api/signals/?${qs}`);

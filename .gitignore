@@ -1,6 +1,8 @@
-# Environment
+# Environment (secrets)
 .env
-*.env
+dashboard/.env.local
+!.env.example
+!dashboard/.env.local.example
 
 # macOS
 .DS_Store
@@ -11,6 +13,8 @@
 
 # Runtime data
 signals.db
+signals.db-wal
+signals.db-shm
 
 # Python
 __pycache__/
@@ -21,10 +25,10 @@ __pycache__/
 venv/
 env/
 ENV/
+.venv/
 
 # Node / Dashboard
 node_modules/
-dashboard/node_modules/
 dashboard/.next/
 .next/
 
@@ -37,3 +41,7 @@ models/
 .idea/
 *.swp
 *.swo
+*~
+
+# Logs
+*.log
