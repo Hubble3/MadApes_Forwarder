@@ -1,15 +1,17 @@
 'use client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { api, Signal } from './api';
+import { showToast } from '@/components/Toast';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
 
-// WebSocket hook for real-time updates
+// WebSocket hook for real-time updates + toast notifications
 export function useWebSocket() {
   const queryClient = useQueryClient();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<NodeJS.Timeout>();
+  const [connected, setConnected] = useState(false);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -18,18 +20,39 @@ export function useWebSocket() {
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
+      ws.onopen = () => setConnected(true);
+
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          // Invalidate relevant queries on any event
-          if (msg.type?.includes('signal') || msg.type?.includes('Signal')) {
+          const t = msg.type || '';
+          const d = msg.data || {};
+
+          // Toast notifications
+          if (t.includes('SignalDetected') || t.includes('signal_detected')) {
+            showToast({
+              type: 'signal',
+              title: 'New Signal',
+              body: `${d.token_symbol || d.token_name || 'Token'} on ${(d.chain || '').toUpperCase()} - MC: ${d.market_cap ? `$${(d.market_cap / 1000).toFixed(0)}K` : 'N/A'}`,
+            });
+          }
+          if (t.includes('Runner') || t.includes('runner')) {
+            showToast({
+              type: 'runner',
+              title: 'Runner Alert',
+              body: `${d.token_symbol || d.token_name || 'Token'} is running! ${d.velocity ? `+${d.velocity.toFixed(1)}%/min` : ''}`,
+            });
+          }
+
+          // Invalidate relevant queries
+          if (t.includes('signal') || t.includes('Signal')) {
             queryClient.invalidateQueries({ queryKey: ['signals'] });
             queryClient.invalidateQueries({ queryKey: ['overview'] });
           }
-          if (msg.type?.includes('runner') || msg.type?.includes('Runner')) {
+          if (t.includes('runner') || t.includes('Runner')) {
             queryClient.invalidateQueries({ queryKey: ['runners'] });
           }
-          if (msg.type?.includes('performance') || msg.type?.includes('Performance')) {
+          if (t.includes('performance') || t.includes('Performance')) {
             queryClient.invalidateQueries({ queryKey: ['signals'] });
             queryClient.invalidateQueries({ queryKey: ['overview'] });
             queryClient.invalidateQueries({ queryKey: ['portfolio'] });
@@ -40,6 +63,7 @@ export function useWebSocket() {
       };
 
       ws.onclose = () => {
+        setConnected(false);
         reconnectTimer.current = setTimeout(connect, 3000);
       };
 
@@ -56,6 +80,8 @@ export function useWebSocket() {
       wsRef.current?.close();
     };
   }, [connect]);
+
+  return connected;
 }
 
 export function useOverview() {

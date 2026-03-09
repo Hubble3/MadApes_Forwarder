@@ -1,11 +1,21 @@
 'use client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, createContext, useContext } from 'react';
 import { useWebSocket } from '@/lib/hooks';
+import ToastContainer from '@/components/Toast';
+
+// WebSocket connection status context
+const WsContext = createContext(false);
+export function useWsConnected() { return useContext(WsContext); }
 
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
-  useWebSocket();
-  return <>{children}</>;
+  const connected = useWebSocket();
+  return (
+    <WsContext.Provider value={connected}>
+      {children}
+      <ToastContainer />
+    </WsContext.Provider>
+  );
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {

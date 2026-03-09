@@ -2,6 +2,7 @@
 import './globals.css';
 import { Providers } from './providers';
 import { usePathname } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import clsx from 'clsx';
 
@@ -62,14 +63,74 @@ function RunnerIcon({ className }: { className?: string }) {
   );
 }
 
+function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+  return (
+    <>
+      {/* Logo */}
+      <div className="p-5 border-b border-dark-400/50">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+            <span className="text-white font-bold text-sm">MA</span>
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-white tracking-tight">MadApes</h1>
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest">Intelligence</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 p-3 space-y-1">
+        {navItems.map((item) => {
+          const active = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onNavigate}
+              className={clsx(
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
+                active
+                  ? 'bg-blue-500/10 text-blue-400 shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-dark-600'
+              )}
+            >
+              <item.icon className={clsx('w-5 h-5', active ? 'text-blue-400' : 'text-slate-500')} />
+              {item.label}
+              {active && (
+                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse-dot" />
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Status footer */}
+      <div className="p-4 border-t border-dark-400/50">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-dot" />
+          <span className="text-xs text-slate-500">Bot Online</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close mobile nav on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   return (
     <html lang="en">
       <head>
         <title>MadApes Signal Intelligence</title>
         <meta name="description" content="Crypto signal intelligence dashboard" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -77,58 +138,51 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen font-[Inter]">
         <Providers>
           <div className="flex h-screen overflow-hidden">
-            {/* Sidebar */}
-            <aside className="w-64 bg-dark-800 border-r border-dark-400/50 flex flex-col shrink-0">
-              {/* Logo */}
-              <div className="p-5 border-b border-dark-400/50">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                    <span className="text-white font-bold text-sm">MA</span>
-                  </div>
-                  <div>
-                    <h1 className="text-sm font-bold text-white tracking-tight">MadApes</h1>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-widest">Intelligence</p>
-                  </div>
-                </div>
-              </div>
+            {/* Desktop Sidebar */}
+            <aside className="hidden md:flex w-64 bg-dark-800 border-r border-dark-400/50 flex-col shrink-0">
+              <SidebarContent pathname={pathname} />
+            </aside>
 
-              {/* Nav */}
-              <nav className="flex-1 p-3 space-y-1">
-                {navItems.map((item) => {
-                  const active = pathname === item.href;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={clsx(
-                        'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
-                        active
-                          ? 'bg-blue-500/10 text-blue-400 shadow-sm'
-                          : 'text-slate-400 hover:text-white hover:bg-dark-600'
-                      )}
-                    >
-                      <item.icon className={clsx('w-5 h-5', active ? 'text-blue-400' : 'text-slate-500')} />
-                      {item.label}
-                      {active && (
-                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse-dot" />
-                      )}
-                    </Link>
-                  );
-                })}
-              </nav>
+            {/* Mobile overlay */}
+            {mobileOpen && (
+              <div
+                className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+                onClick={() => setMobileOpen(false)}
+              />
+            )}
 
-              {/* Status footer */}
-              <div className="p-4 border-t border-dark-400/50">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-dot" />
-                  <span className="text-xs text-slate-500">Bot Online</span>
-                </div>
-              </div>
+            {/* Mobile Sidebar */}
+            <aside
+              className={clsx(
+                'fixed inset-y-0 left-0 z-50 w-64 bg-dark-800 border-r border-dark-400/50 flex flex-col md:hidden',
+                'transition-transform duration-300 ease-in-out',
+                mobileOpen ? 'translate-x-0' : '-translate-x-full'
+              )}
+            >
+              <SidebarContent pathname={pathname} onNavigate={() => setMobileOpen(false)} />
             </aside>
 
             {/* Main Content */}
             <main className="flex-1 overflow-y-auto">
-              <div className="max-w-[1400px] mx-auto px-8 py-6">
+              {/* Mobile header */}
+              <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-dark-800 border-b border-dark-400/50 sticky top-0 z-30">
+                <button
+                  onClick={() => setMobileOpen(true)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-dark-600 transition-colors"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                    <span className="text-white font-bold text-[10px]">MA</span>
+                  </div>
+                  <span className="text-sm font-bold text-white">MadApes</span>
+                </div>
+              </div>
+
+              <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-6">
                 {children}
               </div>
             </main>
