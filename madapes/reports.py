@@ -71,6 +71,24 @@ async def check_signal_price(signal_row):
         price_change = ((current_price - original_price) / original_price) * 100
         is_winner = current_price > original_price
 
+        # Re-enrich missing token name/symbol/chain from DexScreener response
+        ds_name = current_data.get("name") or current_data.get("token_name")
+        ds_symbol = current_data.get("symbol") or current_data.get("token_symbol")
+        ds_chain = current_data.get("chain")
+        needs_name = not signal_row["token_name"] or not signal_row["token_symbol"]
+        needs_chain = ds_chain and ds_chain != signal_row["chain"]
+        if (needs_name and (ds_name or ds_symbol)) or needs_chain:
+            try:
+                from db import get_connection
+                with get_connection() as conn:
+                    conn.execute(
+                        "UPDATE signals SET token_name=COALESCE(token_name,?), token_symbol=COALESCE(token_symbol,?), chain=COALESCE(?,chain) WHERE id=?",
+                        (ds_name, ds_symbol, ds_chain if needs_chain else None, signal_row["id"]),
+                    )
+                logger.info(f"Re-enriched signal {signal_row['id']}: name={ds_name}, symbol={ds_symbol}, chain={ds_chain}")
+            except Exception as e:
+                logger.debug(f"Re-enrich update failed: {e}")
+
         return {
             "current_data": current_data,
             "price_change": price_change,

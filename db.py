@@ -318,6 +318,8 @@ def update_signal_after_forward(
             chain = token_info.get("chain", "")
             data_key = f"{chain}:{token_address}"
             data = dexscreener_data.get(data_key, {})
+            # Use DexScreener's chain if available (more accurate than text-based detection)
+            enriched_chain = data.get("chain") or chain
             token_name = data.get("token_name") or None
             token_symbol = data.get("token_symbol") or None
             original_price = float(data.get("price")) if data.get("price") else None
@@ -339,13 +341,13 @@ def update_signal_after_forward(
             cursor.execute(
                 """
                 UPDATE signals SET
-                    forwarded_message_id = ?, token_name = ?, token_symbol = ?,
+                    forwarded_message_id = ?, chain = ?, token_name = ?, token_symbol = ?,
                     original_price = ?, original_volume = ?, original_liquidity = ?, original_market_cap = ?,
                     original_dexscreener_link = ?, signal_link = ?, status = 'active',
                     original_dex_id = ?, destination_type = ?, hour_utc = ?, day_of_week = ?, session = ?
                 WHERE id = ?
                 """,
-                (forwarded_message_id, token_name, token_symbol,
+                (forwarded_message_id, enriched_chain, token_name, token_symbol,
                  original_price, original_volume, original_liquidity, original_market_cap,
                  original_dexscreener_link, signal_link,
                  original_dex_id, destination_type, hour_utc, day_of_week, session,

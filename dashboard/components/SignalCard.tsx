@@ -56,7 +56,11 @@ export default function SignalCard({ signal }: { signal: Signal }) {
             {chain.toUpperCase() || 'ETH'}
           </span>
           <span className="font-semibold text-sm text-white">
-            {signal.token_symbol || signal.token_name || signal.token_address?.slice(0, 8)}
+            {signal.token_symbol || signal.token_name || (
+              signal.token_address
+                ? `${signal.token_address.slice(0, 6)}...${signal.token_address.slice(-4)}`
+                : 'Unknown'
+            )}
           </span>
           {signal.runner_alerted === 1 && (
             <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/20 animate-pulse">
@@ -86,6 +90,34 @@ export default function SignalCard({ signal }: { signal: Signal }) {
           <p className="text-xs text-slate-300 font-mono">{formatCurrency(signal.original_market_cap)}</p>
         </div>
       </div>
+
+      {/* Links */}
+      {(signal.original_dexscreener_link || signal.signal_link) && (
+        <div className="flex items-center gap-2 mb-2">
+          {signal.original_dexscreener_link && (
+            <a
+              href={signal.original_dexscreener_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-[10px] text-green-400 hover:text-green-300 bg-green-500/10 px-1.5 py-0.5 rounded transition-colors"
+            >
+              DexScreener
+            </a>
+          )}
+          {signal.signal_link && (
+            <a
+              href={signal.signal_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded transition-colors"
+            >
+              Telegram
+            </a>
+          )}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between pt-2 border-t border-dark-400/30">

@@ -10,6 +10,7 @@ const chainConfig: Record<string, { bg: string; text: string }> = {
   ethereum: { bg: 'bg-blue-500/15', text: 'text-blue-400' },
   bsc: { bg: 'bg-yellow-500/15', text: 'text-yellow-400' },
   base: { bg: 'bg-sky-500/15', text: 'text-sky-400' },
+  arbitrum: { bg: 'bg-sky-500/15', text: 'text-sky-300' },
 };
 
 export default function SignalDetailPage() {
@@ -58,10 +59,10 @@ export default function SignalDetailPage() {
     { label: 'Multiplier', value: s.multiplier !== null ? `${s.multiplier.toFixed(2)}x` : 'N/A' },
     { label: 'Caller', value: s.sender_name },
     { label: 'Source Group', value: s.source_group || 'N/A' },
+    { label: 'Destination', value: s.destination_type || 'N/A' },
     { label: 'Detected At', value: formatTime(s.original_timestamp) },
     { label: 'Runner Alert', value: s.runner_alerted ? 'Yes' : 'No', color: s.runner_alerted ? 'text-orange-400' : undefined },
     { label: 'Confidence', value: s.confidence_score !== null && s.confidence_score !== undefined ? `${s.confidence_score}/100` : 'N/A' },
-    { label: 'Safety Score', value: s.safety_score !== null && s.safety_score !== undefined ? `${s.safety_score}/100` : 'N/A' },
     { label: 'Tags', value: s.tags || 'None' },
   ];
 
@@ -76,7 +77,7 @@ export default function SignalDetailPage() {
       </Link>
 
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <span className={clsx('px-2.5 py-1 rounded-lg text-xs font-bold', cc.bg, cc.text)}>
           {chain.toUpperCase()}
         </span>
@@ -95,6 +96,38 @@ export default function SignalDetailPage() {
           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-500/20 text-orange-400">RUNNER</span>
         )}
       </div>
+
+      {/* Quick Links */}
+      {(s.original_dexscreener_link || s.signal_link) && (
+        <div className="flex items-center gap-3">
+          {s.original_dexscreener_link && (
+            <a
+              href={s.original_dexscreener_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-sm font-medium hover:bg-green-500/20 transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              DexScreener
+            </a>
+          )}
+          {s.signal_link && (
+            <a
+              href={s.signal_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium hover:bg-blue-500/20 transition-colors"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              Telegram Source
+            </a>
+          )}
+        </div>
+      )}
 
       {/* P&L Hero */}
       {pnl !== null && (
