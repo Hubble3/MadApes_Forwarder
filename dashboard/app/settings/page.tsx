@@ -6,7 +6,7 @@ import clsx from 'clsx';
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
-  const { data: settingsData, isLoading } = useQuery({
+  const { data: settingsData } = useQuery({
     queryKey: ['settings'],
     queryFn: () => api.settings.get(),
   });
@@ -14,14 +14,6 @@ export default function SettingsPage() {
     queryKey: ['settings', 'health'],
     queryFn: () => api.settings.health(),
     refetchInterval: 30000,
-  });
-  const { data: blockedData } = useQuery({
-    queryKey: ['settings', 'blocked'],
-    queryFn: () => api.settings.blockedCallers(),
-  });
-  const { data: blacklistData } = useQuery({
-    queryKey: ['settings', 'blacklist'],
-    queryFn: () => api.settings.blacklist(),
   });
 
   const settings = settingsData?.settings;
@@ -51,53 +43,6 @@ export default function SettingsPage() {
     mutationFn: (data: Record<string, any>) => api.settings.update(data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
   });
-
-  // Block caller
-  const [blockId, setBlockId] = useState('');
-  const [blockReason, setBlockReason] = useState('');
-  const blockMutation = useMutation({
-    mutationFn: () => api.settings.blockCaller(Number(blockId), '', blockReason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings', 'blocked'] });
-      setBlockId('');
-      setBlockReason('');
-    },
-  });
-  const unblockMutation = useMutation({
-    mutationFn: (sender_id: number) => api.settings.unblockCaller(sender_id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'blocked'] }),
-  });
-
-  // Blacklist
-  const [blAddr, setBlAddr] = useState('');
-  const [blChain, setBlChain] = useState('solana');
-  const [blReason, setBlReason] = useState('');
-  const addBlMutation = useMutation({
-    mutationFn: () => api.settings.addBlacklist(blAddr, blChain, blReason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings', 'blacklist'] });
-      setBlAddr('');
-      setBlReason('');
-    },
-  });
-  const removeBlMutation = useMutation({
-    mutationFn: (address: string) => api.settings.removeBlacklist(address),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'blacklist'] }),
-  });
-
-  // Signal override
-  const [overrideId, setOverrideId] = useState('');
-  const [overrideStatus, setOverrideStatus] = useState('win');
-  const overrideMutation = useMutation({
-    mutationFn: () => api.settings.overrideSignalStatus(Number(overrideId), overrideStatus),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['signals'] });
-      setOverrideId('');
-    },
-  });
-
-  const blocked = blockedData?.blocked_callers || [];
-  const blacklist = blacklistData?.blacklist || [];
 
   return (
     <div className="space-y-8">
@@ -269,181 +214,41 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Block Callers */}
-        <div className="bg-dark-700 rounded-xl border border-dark-400/30 p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-1">Block Callers</h2>
-          <p className="text-xs text-slate-600 mb-4">Ignore signals from specific senders</p>
-          <div className="flex gap-2 mb-3">
-            <input
-              type="number"
-              placeholder="Sender ID"
-              value={blockId}
-              onChange={(e) => setBlockId(e.target.value)}
-              className="w-32 bg-dark-600 border border-dark-400/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50"
-            />
-            <input
-              placeholder="Reason (optional)"
-              value={blockReason}
-              onChange={(e) => setBlockReason(e.target.value)}
-              className="flex-1 bg-dark-600 border border-dark-400/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50"
-            />
-            <button
-              onClick={() => blockMutation.mutate()}
-              disabled={!blockId || blockMutation.isPending}
-              className="px-3 py-2 bg-red-500/20 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/30 transition-colors disabled:opacity-50"
-            >
-              Block
-            </button>
-          </div>
-          {blocked.length > 0 ? (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {blocked.map((c: any) => (
-                <div key={c.sender_id} className="flex items-center justify-between py-2 px-3 bg-dark-600 rounded-lg">
-                  <div>
-                    <span className="text-sm text-white">{c.sender_name || `ID: ${c.sender_id}`}</span>
-                    {c.reason && <p className="text-[10px] text-slate-500">{c.reason}</p>}
-                  </div>
-                  <button onClick={() => unblockMutation.mutate(c.sender_id)} className="text-xs text-emerald-400 hover:text-emerald-300">
-                    Unblock
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-600">No blocked callers.</p>
-          )}
-        </div>
-
-        {/* Contract Blacklist */}
-        <div className="bg-dark-700 rounded-xl border border-dark-400/30 p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-1">Contract Blacklist</h2>
-          <p className="text-xs text-slate-600 mb-4">Skip known scam/rug tokens</p>
-          <div className="space-y-2 mb-3">
-            <input
-              placeholder="Contract address"
-              value={blAddr}
-              onChange={(e) => setBlAddr(e.target.value)}
-              className="w-full bg-dark-600 border border-dark-400/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50 font-mono"
-            />
-            <div className="flex gap-2">
-              <select
-                value={blChain}
-                onChange={(e) => setBlChain(e.target.value)}
-                className="bg-dark-600 border border-dark-400/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
-              >
-                <option value="solana">Solana</option>
-                <option value="ethereum">Ethereum</option>
-                <option value="bsc">BSC</option>
-                <option value="base">Base</option>
-                <option value="arbitrum">Arbitrum</option>
-              </select>
-              <input
-                placeholder="Reason"
-                value={blReason}
-                onChange={(e) => setBlReason(e.target.value)}
-                className="flex-1 bg-dark-600 border border-dark-400/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50"
-              />
-              <button
-                onClick={() => addBlMutation.mutate()}
-                disabled={!blAddr || addBlMutation.isPending}
-                className="px-3 py-2 bg-red-500/20 text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/30 transition-colors disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-          {blacklist.length > 0 ? (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {blacklist.map((item: any) => (
-                <div key={item.address} className="flex items-center justify-between py-2 px-3 bg-dark-600 rounded-lg">
-                  <div>
-                    <span className="text-xs text-white font-mono">{item.address.slice(0, 6)}...{item.address.slice(-4)}</span>
-                    <span className="text-[10px] text-slate-500 ml-2 uppercase">{item.chain}</span>
-                    {item.reason && <p className="text-[10px] text-slate-500">{item.reason}</p>}
-                  </div>
-                  <button onClick={() => removeBlMutation.mutate(item.address)} className="text-xs text-emerald-400 hover:text-emerald-300">
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-600">No blacklisted contracts.</p>
-          )}
-        </div>
-      </div>
-
-      {/* Signal Management */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-dark-700 rounded-xl border border-dark-400/30 p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-1">Override Signal Status</h2>
-          <p className="text-xs text-slate-600 mb-4">Manually mark a signal as win/loss if auto-detection was wrong</p>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              placeholder="Signal ID"
-              value={overrideId}
-              onChange={(e) => setOverrideId(e.target.value)}
-              className="w-28 bg-dark-600 border border-dark-400/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50"
-            />
-            <select
-              value={overrideStatus}
-              onChange={(e) => setOverrideStatus(e.target.value)}
-              className="bg-dark-600 border border-dark-400/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
-            >
-              <option value="win">Win</option>
-              <option value="loss">Loss</option>
-              <option value="active">Active</option>
-            </select>
-            <button
-              onClick={() => overrideMutation.mutate()}
-              disabled={!overrideId || overrideMutation.isPending}
-              className="px-4 py-2 bg-blue-500/20 text-blue-400 text-sm font-medium rounded-lg hover:bg-blue-500/30 transition-colors disabled:opacity-50"
-            >
-              Override
-            </button>
-          </div>
-          {overrideMutation.isSuccess && <p className="text-xs text-emerald-400 mt-2">Status updated.</p>}
-          {overrideMutation.isError && <p className="text-xs text-red-400 mt-2">Failed to update.</p>}
-        </div>
-
-        {/* Data Export */}
-        <div className="bg-dark-700 rounded-xl border border-dark-400/30 p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-1">Data Export</h2>
-          <p className="text-xs text-slate-600 mb-4">Download signal and caller data as JSON</p>
-          <div className="flex gap-3">
-            <button
-              onClick={async () => {
-                const data = await api.settings.exportSignals();
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `signals_export_${new Date().toISOString().slice(0, 10)}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              className="px-4 py-2 bg-dark-600 text-slate-300 text-sm font-medium rounded-lg hover:bg-dark-500 transition-colors border border-dark-400/50"
-            >
-              Export Signals
-            </button>
-            <button
-              onClick={async () => {
-                const data = await api.settings.exportCallers();
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `callers_export_${new Date().toISOString().slice(0, 10)}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              className="px-4 py-2 bg-dark-600 text-slate-300 text-sm font-medium rounded-lg hover:bg-dark-500 transition-colors border border-dark-400/50"
-            >
-              Export Callers
-            </button>
-          </div>
+      {/* Data Export */}
+      <div className="bg-dark-700 rounded-xl border border-dark-400/30 p-5">
+        <h2 className="text-sm font-semibold text-slate-300 mb-1">Data Export</h2>
+        <p className="text-xs text-slate-600 mb-4">Download signal and caller data as JSON</p>
+        <div className="flex gap-3">
+          <button
+            onClick={async () => {
+              const data = await api.settings.exportSignals();
+              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `signals_export_${new Date().toISOString().slice(0, 10)}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="px-4 py-2 bg-dark-600 text-slate-300 text-sm font-medium rounded-lg hover:bg-dark-500 transition-colors border border-dark-400/50"
+          >
+            Export Signals
+          </button>
+          <button
+            onClick={async () => {
+              const data = await api.settings.exportCallers();
+              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `callers_export_${new Date().toISOString().slice(0, 10)}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="px-4 py-2 bg-dark-600 text-slate-300 text-sm font-medium rounded-lg hover:bg-dark-500 transition-colors border border-dark-400/50"
+          >
+            Export Callers
+          </button>
         </div>
       </div>
     </div>
