@@ -84,6 +84,14 @@ export function useWebSocket() {
   return connected;
 }
 
+export function useBotStatus() {
+  return useQuery({
+    queryKey: ['bot-status'],
+    queryFn: () => api.botStatus(),
+    refetchInterval: 10000,
+  });
+}
+
 export function useOverview() {
   return useQuery({
     queryKey: ['overview'],

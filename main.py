@@ -64,6 +64,23 @@ async def resolve_entity(name, label):
     return entity
 
 
+async def _heartbeat_loop(group_count: int):
+    """Send periodic heartbeat to API server for bot status tracking."""
+    from madapes.http_client import get_session
+    while True:
+        try:
+            session = await get_session()
+            async with session.post(
+                "http://127.0.0.1:8000/api/internal/heartbeat",
+                json={"groups": group_count, "status": "running"},
+                timeout=3,
+            ) as resp:
+                pass
+        except Exception:
+            pass
+        await asyncio.sleep(15)
+
+
 async def main():
     ctx = app_context
     ctx.client = client
@@ -144,6 +161,7 @@ async def main():
     # Start background tasks
     asyncio.create_task(background_checker())
     asyncio.create_task(runner_watcher(client, ctx.report_destination_entity))
+    asyncio.create_task(_heartbeat_loop(len(verified_groups)))
 
     try:
         await client.run_until_disconnected()

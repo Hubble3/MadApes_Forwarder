@@ -66,6 +66,7 @@ export interface Caller {
   worst_return: number;
   composite_score: number;
   last_signal_at: string | null;
+  win_rate?: number;
 }
 
 export interface PortfolioSummary {
@@ -112,6 +113,7 @@ export interface LeaderboardEntry {
 // API functions
 export const api = {
   health: () => fetchApi<{ status: string }>('/api/health'),
+  botStatus: () => fetchApi<{ online: boolean; seconds_ago: number | null; ws_clients: number; info: any }>('/api/bot-status'),
 
   signals: {
     list: (params?: { status?: string; chain?: string; search?: string; limit?: number; offset?: number }) => {
@@ -136,6 +138,8 @@ export const api = {
       fetchApi<{ callers: Caller[] }>(`/api/callers/?min_signals=${minSignals}`),
     get: (senderId: number) =>
       fetchApi<{ caller: Caller }>(`/api/callers/${senderId}`),
+    signals: (senderId: number, limit = 20) =>
+      fetchApi<{ signals: Signal[]; total: number }>(`/api/callers/${senderId}/signals?limit=${limit}`),
   },
 
   portfolio: {

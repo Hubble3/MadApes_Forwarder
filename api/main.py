@@ -7,12 +7,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import init_database
 from api.routes import signals, callers, portfolio, analytics, leaderboard, runners, webhooks, ml, settings, strategies
-from api.websocket import websocket_endpoint
+from api.websocket import websocket_endpoint, broadcast, update_bot_heartbeat, get_bot_status
 
 
 @asynccontextmanager
@@ -60,3 +60,27 @@ async def ws(websocket: WebSocket):
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/bot-status")
+async def bot_status():
+    """Get current bot online/offline status."""
+    return get_bot_status()
+
+
+@app.post("/api/internal/broadcast")
+async def internal_broadcast(request: Request):
+    """Internal endpoint for bot process to push events to WebSocket clients."""
+    data = await request.json()
+    event_type = data.get("event_type", "unknown")
+    event_data = data.get("data", {})
+    await broadcast(event_type, event_data)
+    return {"ok": True}
+
+
+@app.post("/api/internal/heartbeat")
+async def internal_heartbeat(request: Request):
+    """Internal endpoint for bot to report its status."""
+    data = await request.json()
+    update_bot_heartbeat(data)
+    return {"ok": True}

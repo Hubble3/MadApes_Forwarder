@@ -11,7 +11,7 @@ router = APIRouter()
 def _caller_to_dict(caller):
     if caller is None:
         return None
-    return {
+    result = {
         "sender_id": caller.sender_id,
         "sender_name": caller.sender_name,
         "total_signals": caller.total_signals,
@@ -24,6 +24,9 @@ def _caller_to_dict(caller):
         "composite_score": caller.composite_score,
         "last_signal_at": caller.last_signal_at,
     }
+    checked = (caller.win_count or 0) + (caller.loss_count or 0)
+    result["win_rate"] = round((caller.win_count / checked * 100) if checked > 0 else 0, 1)
+    return result
 
 
 @router.get("/")
@@ -43,3 +46,22 @@ async def get_caller_detail(sender_id: int, api_key: str = Depends(verify_api_ke
     if not caller:
         raise HTTPException(status_code=404, detail="Caller not found")
     return {"caller": _caller_to_dict(caller)}
+
+
+@router.get("/{sender_id}/signals")
+async def get_caller_signals(
+    sender_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    api_key: str = Depends(verify_api_key),
+):
+    """Get recent signals from a specific caller."""
+    from db import get_connection
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM signals WHERE sender_id = ? ORDER BY original_timestamp DESC LIMIT ?",
+            (sender_id, limit),
+        ).fetchall()
+    return {
+        "signals": [{key: row[key] for key in row.keys()} for row in rows],
+        "total": len(rows),
+    }

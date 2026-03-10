@@ -38,6 +38,7 @@ def get_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=5000")
     try:
         yield conn
@@ -197,6 +198,18 @@ def init_database(max_signals=100):
                 created_at TEXT
             )
         """)
+
+        # ── Performance indexes ──────────────────────────────────────────
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_status ON signals(status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_token_address ON signals(token_address)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_original_timestamp ON signals(original_timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_sender_id ON signals(sender_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_chain ON signals(chain)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_runner ON signals(runner_alerted, status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_status_timestamp ON signals(status, original_timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_token_type_status ON signals(token_type, status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_checked ON signals(checked_1h, checked_6h, status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_sender_status ON signals(sender_id, status)")
 
         conn.commit()
     logger.info("Database initialized")
@@ -436,6 +449,7 @@ def get_signals_for_runner_check(max_age_minutes=60, min_age_minutes=2):
             AND (runner_alerted = 0 OR runner_alerted IS NULL)
             AND original_timestamp > ? AND original_timestamp < ?
             ORDER BY original_timestamp DESC
+            LIMIT 50
             """,
             (oldest, youngest),
         ).fetchall()
@@ -461,7 +475,7 @@ def get_runner_exit_candidates(max_age_hours=24):
 def get_all_active_signals():
     """All active signals for daily report."""
     with get_connection() as conn:
-        return conn.execute("SELECT * FROM signals WHERE status IN ('active', 'win', 'loss')").fetchall()
+        return conn.execute("SELECT * FROM signals WHERE status IN ('active', 'win', 'loss') LIMIT 500").fetchall()
 
 
 def update_signal_performance(signal_id, current_data, is_winner, time_label=None):

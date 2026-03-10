@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import SignalCard from '@/components/SignalCard';
 import { SkeletonSignal } from '@/components/Skeleton';
 import { useSignals, useLivePrices } from '@/lib/hooks';
@@ -25,13 +25,18 @@ export default function SignalsPage() {
   const [chain, setChain] = useState('');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [page, setPage] = useState(1);
+  const limit = 20;
 
   const { data, isLoading } = useSignals({
     status: status === 'all' ? undefined : status,
     chain: chain || undefined,
     search: search || undefined,
-    limit: 50,
+    limit,
+    offset: (page - 1) * limit,
   });
+
+  useEffect(() => { setPage(1); }, [status, chain, search]);
 
   const { data: livePriceData } = useLivePrices();
   const livePrices = livePriceData?.prices || {};
@@ -142,6 +147,58 @@ export default function SignalsPage() {
               {search && <p className="text-xs text-slate-700 mt-1">Try a different search term</p>}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {data && data.total > limit && (
+        <div className="flex items-center justify-between pt-4">
+          <p className="text-sm text-slate-500">
+            Showing {((page - 1) * limit) + 1}-{Math.min(page * limit, data.total)} of {data.total}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium bg-dark-700 border border-dark-400/30 text-slate-300 hover:bg-dark-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              Previous
+            </button>
+            {Array.from({ length: Math.min(5, Math.ceil(data.total / limit)) }, (_, i) => {
+              const totalPages = Math.ceil(data.total / limit);
+              let pageNum: number;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (page <= 3) {
+                pageNum = i + 1;
+              } else if (page >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = page - 2 + i;
+              }
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setPage(pageNum)}
+                  className={clsx(
+                    'w-8 h-8 rounded-lg text-sm font-medium transition-colors',
+                    page === pageNum
+                      ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                      : 'text-slate-500 hover:text-slate-300 hover:bg-dark-600'
+                  )}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setPage(p => Math.min(Math.ceil((data?.total || 0) / limit), p + 1))}
+              disabled={page >= Math.ceil((data?.total || 0) / limit)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium bg-dark-700 border border-dark-400/30 text-slate-300 hover:bg-dark-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
     </div>

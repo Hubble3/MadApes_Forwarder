@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import clsx from 'clsx';
+import { useBotStatus, useWebSocket } from '@/lib/hooks';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: DashboardIcon },
@@ -82,6 +83,35 @@ function SettingsIcon({ className }: { className?: string }) {
   );
 }
 
+function BotStatusFooter() {
+  const { data: botStatus } = useBotStatus();
+  const wsConnected = useWebSocket();
+  const online = botStatus?.online ?? false;
+
+  return (
+    <div className="p-4 border-t border-dark-400/50 space-y-2">
+      <div className="flex items-center gap-2">
+        <div className={clsx(
+          'w-2 h-2 rounded-full',
+          online ? 'bg-emerald-400 animate-pulse-dot' : 'bg-red-400'
+        )} />
+        <span className="text-xs text-slate-500">
+          {online ? 'Bot Online' : 'Bot Offline'}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className={clsx(
+          'w-2 h-2 rounded-full',
+          wsConnected ? 'bg-blue-400 animate-pulse-dot' : 'bg-slate-600'
+        )} />
+        <span className="text-[10px] text-slate-600">
+          {wsConnected ? 'Live updates' : 'Reconnecting...'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   return (
     <>
@@ -124,13 +154,8 @@ function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate
         })}
       </nav>
 
-      {/* Status footer */}
-      <div className="p-4 border-t border-dark-400/50">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-dot" />
-          <span className="text-xs text-slate-500">Bot Online</span>
-        </div>
-      </div>
+      {/* Live status footer */}
+      <BotStatusFooter />
     </>
   );
 }

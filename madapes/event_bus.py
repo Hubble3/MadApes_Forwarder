@@ -22,6 +22,26 @@ _EVENT_CHANNELS = {
     "RunnerDetected": CHANNEL_RUNNER_DETECTED,
 }
 
+# API base URL for cross-process broadcasting
+_API_URL = "http://127.0.0.1:8000"
+
+
+async def _broadcast_to_api(event_type: str, event_data: dict):
+    """Push event to the API server's WebSocket clients via HTTP."""
+    try:
+        from madapes.http_client import get_session
+        session = await get_session()
+        async with session.post(
+            f"{_API_URL}/api/internal/broadcast",
+            json={"event_type": event_type, "data": event_data},
+            timeout=2,
+        ) as resp:
+            if resp.status == 200:
+                logger.debug(f"Broadcast to API: {event_type}")
+    except Exception:
+        # API might not be running — that's fine
+        pass
+
 
 async def emit(event):
     """Publish an event to the appropriate Redis channel.
@@ -36,14 +56,8 @@ async def emit(event):
     await publish(channel, event_data)
     logger.debug(f"Event emitted: {event_type} on {channel}")
 
-    # Broadcast to WebSocket clients if API is running
-    try:
-        from api.websocket import broadcast
-        await broadcast(event_type, event_data)
-    except ImportError:
-        pass
-    except Exception:
-        pass
+    # Broadcast to API server's WebSocket clients (cross-process)
+    await _broadcast_to_api(event_type, event_data)
 
 
 async def on(event_type: str, callback: Callable[[str, dict], Awaitable[None]]):
