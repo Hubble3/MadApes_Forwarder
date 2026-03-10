@@ -32,12 +32,59 @@ async def check_signal_price(signal_row) -> dict | None:
             return None
 
         original_price = safe_float(signal_row["original_price"])
+
+        # Auto-fill missing entry price from first available live data
+        if (not original_price or original_price <= 0) and current_data.get("price"):
+            original_price = float(current_data["price"])
+            try:
+                from db import get_connection
+                with get_connection() as conn:
+                    conn.execute(
+                        """UPDATE signals SET original_price = ?, original_market_cap = COALESCE(original_market_cap, ?),
+                           original_liquidity = COALESCE(original_liquidity, ?), original_volume = COALESCE(original_volume, ?)
+                        WHERE id = ? AND original_price IS NULL""",
+                        (original_price,
+                         float(current_data["fdv"]) if current_data.get("fdv") else None,
+                         float(current_data["liquidity"]) if current_data.get("liquidity") else None,
+                         float(current_data["volume_24h"]) if current_data.get("volume_24h") else None,
+                         signal_row["id"]),
+                    )
+                    conn.commit()
+                logger.info(f"Auto-filled entry price for signal {signal_row['id']}: ${original_price}")
+            except Exception as e:
+                logger.debug(f"Auto-fill entry price failed: {e}")
+            return {
+                "current_data": current_data,
+                "price_change": 0.0,
+                "multiplier": 1.0,
+                "is_winner": False,
+            }
+
         if not original_price or original_price <= 0:
             return None
 
         current_price = float(current_data["price"])
         price_change = ((current_price - original_price) / original_price) * 100
         is_winner = current_price > original_price
+
+        # Re-enrich missing token name/symbol/chain from DexScreener response
+        ds_name = current_data.get("name") or current_data.get("token_name")
+        ds_symbol = current_data.get("symbol") or current_data.get("token_symbol")
+        ds_chain = current_data.get("chain")
+        needs_name = not signal_row["token_name"] or not signal_row["token_symbol"]
+        needs_chain = ds_chain and ds_chain != signal_row["chain"]
+        if (needs_name and (ds_name or ds_symbol)) or needs_chain:
+            try:
+                from db import get_connection
+                with get_connection() as conn:
+                    conn.execute(
+                        "UPDATE signals SET token_name=COALESCE(token_name,?), token_symbol=COALESCE(token_symbol,?), chain=COALESCE(?,chain) WHERE id=?",
+                        (ds_name, ds_symbol, ds_chain if needs_chain else None, signal_row["id"]),
+                    )
+                    conn.commit()
+                logger.info(f"Re-enriched signal {signal_row['id']}: name={ds_name}, symbol={ds_symbol}, chain={ds_chain}")
+            except Exception as e:
+                logger.debug(f"Re-enrich update failed: {e}")
 
         return {
             "current_data": current_data,
@@ -82,7 +129,7 @@ async def run_1h_checks() -> list:
             # Update caller stats
             sender_id = signal_row["sender_id"]
             if sender_id:
-                update_caller_stats(sender_id, signal_row.get("sender_name", ""))
+                update_caller_stats(sender_id, signal_row["sender_name"] or "")
 
             # Update portfolio position
             current_price = safe_float(check_result["current_data"].get("price"))
@@ -128,7 +175,7 @@ async def run_6h_checks() -> list:
             # Update caller stats
             sender_id = signal_row["sender_id"]
             if sender_id:
-                update_caller_stats(sender_id, signal_row.get("sender_name", ""))
+                update_caller_stats(sender_id, signal_row["sender_name"] or "")
 
             # Close portfolio position at 6h mark
             current_price = safe_float(check_result["current_data"].get("price"))

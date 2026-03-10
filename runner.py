@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 
 from madapes.runtime_settings import get_runner_velocity_min, get_runner_vol_accel_min, get_runner_poll_interval
-from db import get_signals_for_runner_check, mark_runner_alerted, update_max_tracking
+from db import get_signals_for_runner_check, get_runner_exit_candidates, mark_runner_alerted, update_max_tracking
 from madapes.constants import CHAIN_EMOJI_MAP
 from madapes.event_bus import emit
 from madapes.events import RunnerDetected
@@ -294,19 +294,34 @@ async def runner_watcher(client, report_destination_entity):
                             tier = details.get("tier", "runner")
                             logger.info(f"{tier.upper()} alert sent for signal {signal_id} ({token_address[:8]}...)")
 
-                    # Exit signal detection (for previously alerted runners)
-                    elif signal_row["runner_alerted"]:
-                        should_exit, exit_reason = detect_exit_signal(signal_row, current_data)
-                        if should_exit and report_destination_entity:
-                            msg = build_exit_alert_message(signal_row, current_data, exit_reason)
-                            await client.send_message(
-                                report_destination_entity, msg,
-                                parse_mode="html", link_preview=False,
-                            )
-                            logger.info(f"Exit signal for {signal_id}: {exit_reason}")
-
                 except Exception as e:
                     logger.error(f"Runner check failed for signal {signal_id}: {e}")
+
+                await asyncio.sleep(1.5)
+
+            # Exit signal detection for previously alerted runners (separate query)
+            exit_candidates = get_runner_exit_candidates()
+            for signal_row in exit_candidates:
+                signal_id = signal_row["id"]
+                try:
+                    current_data = await enrich_token(signal_row["chain"], signal_row["token_address"])
+                    if not current_data or not current_data.get("price"):
+                        continue
+
+                    current_price = safe_float(current_data.get("price"))
+                    current_mc = safe_float(current_data.get("fdv"))
+                    update_max_tracking(signal_id, current_price, current_mc)
+
+                    should_exit, exit_reason = detect_exit_signal(signal_row, current_data)
+                    if should_exit and report_destination_entity:
+                        msg = build_exit_alert_message(signal_row, current_data, exit_reason)
+                        await client.send_message(
+                            report_destination_entity, msg,
+                            parse_mode="html", link_preview=False,
+                        )
+                        logger.info(f"Exit signal for {signal_id}: {exit_reason}")
+                except Exception as e:
+                    logger.error(f"Exit signal check failed for signal {signal_id}: {e}")
 
                 await asyncio.sleep(1.5)
 

@@ -88,6 +88,7 @@ def format_leaderboard_message(leaderboard: List[dict], window_label: str = "All
         avg = entry["avg_return"]
         total = entry["total_signals"]
 
+        avg = avg or 0
         avg_emoji = "\U0001f7e2" if avg >= 0 else "\U0001f534"
         lines.append(
             f"{medal} <b>{name}</b> | {avg_emoji} {avg:+.1f}% avg | "

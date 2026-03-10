@@ -434,10 +434,27 @@ def get_signals_for_runner_check(max_age_minutes=60, min_age_minutes=2):
             SELECT * FROM signals
             WHERE status = 'active' AND token_type = 'contract'
             AND (runner_alerted = 0 OR runner_alerted IS NULL)
-            AND original_timestamp < ? AND original_timestamp > ?
+            AND original_timestamp > ? AND original_timestamp < ?
             ORDER BY original_timestamp DESC
             """,
             (oldest, youngest),
+        ).fetchall()
+
+
+def get_runner_exit_candidates(max_age_hours=24):
+    """Active signals that were runner-alerted, for exit signal monitoring."""
+    with get_connection() as conn:
+        now = utcnow_naive()
+        oldest = (now - timedelta(hours=max_age_hours)).isoformat()
+        return conn.execute(
+            """
+            SELECT * FROM signals
+            WHERE status = 'active' AND token_type = 'contract'
+            AND runner_alerted = 1
+            AND original_timestamp > ?
+            ORDER BY runner_alerted_at DESC
+            """,
+            (oldest,),
         ).fetchall()
 
 

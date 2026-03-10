@@ -199,7 +199,7 @@ def get_portfolio_summary() -> dict:
     # Closed positions aggregate
     total_realized = sum(safe_float(r["realized_pnl"], 0) for r in closed_rows)
     wins = sum(1 for r in closed_rows if (r["realized_pnl"] or 0) > 0)
-    losses = sum(1 for r in closed_rows if (r["realized_pnl"] or 0) <= 0)
+    losses = sum(1 for r in closed_rows if (r["realized_pnl"] or 0) < 0)
     win_rate = (wins / total_closed * 100) if total_closed > 0 else 0
 
     # Best/worst

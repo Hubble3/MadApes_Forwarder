@@ -1,5 +1,5 @@
 """Caller endpoints."""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 
 from api.auth import verify_api_key
@@ -41,5 +41,5 @@ async def get_caller_detail(sender_id: int, api_key: str = Depends(verify_api_ke
     """Get caller details by sender ID."""
     caller = get_caller(sender_id)
     if not caller:
-        return {"error": "Caller not found"}, 404
+        raise HTTPException(status_code=404, detail="Caller not found")
     return {"caller": _caller_to_dict(caller)}

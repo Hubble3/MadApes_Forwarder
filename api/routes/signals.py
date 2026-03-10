@@ -1,7 +1,7 @@
 """Signal endpoints."""
 import asyncio
 import logging
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 
 from api.auth import verify_api_key
@@ -197,5 +197,5 @@ async def get_signal(signal_id: int, api_key: str = Depends(verify_api_key)):
     """Get a specific signal by ID."""
     row = get_signal_by_id(signal_id)
     if not row:
-        return {"error": "Signal not found"}
+        raise HTTPException(status_code=404, detail="Signal not found")
     return {"signal": _row_to_dict(row)}

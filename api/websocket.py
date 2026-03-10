@@ -34,7 +34,7 @@ async def broadcast(event_type: str, data: dict):
         return
     message = json.dumps({"type": event_type, "data": data})
     disconnected = set()
-    for client in _clients:
+    for client in list(_clients):
         try:
             await client.send_text(message)
         except Exception:

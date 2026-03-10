@@ -133,7 +133,7 @@ async def system_health(api_key: str = Depends(verify_api_key)):
 
         try:
             db_stats["portfolio_entries"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM portfolio"
+                "SELECT COUNT(*) as cnt FROM portfolio_entries"
             ).fetchone()["cnt"]
         except Exception:
             db_stats["portfolio_entries"] = 0
