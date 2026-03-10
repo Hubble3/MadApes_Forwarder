@@ -374,13 +374,16 @@ def update_signal_after_forward(
                     forwarded_message_id = ?, chain = ?, token_name = ?, token_symbol = ?,
                     original_price = ?, original_volume = ?, original_liquidity = ?, original_market_cap = ?,
                     original_dexscreener_link = ?, signal_link = ?, status = 'active',
-                    original_dex_id = ?, destination_type = ?, hour_utc = ?, day_of_week = ?, session = ?
+                    original_dex_id = ?, destination_type = ?, hour_utc = ?, day_of_week = ?, session = ?,
+                    max_price_seen = COALESCE(max_price_seen, ?), max_price_seen_at = COALESCE(max_price_seen_at, ?),
+                    max_market_cap_seen = COALESCE(max_market_cap_seen, ?), max_market_cap_seen_at = COALESCE(max_market_cap_seen_at, ?)
                 WHERE id = ?
                 """,
                 (forwarded_message_id, enriched_chain, token_name, token_symbol,
                  original_price, original_volume, original_liquidity, original_market_cap,
                  original_dexscreener_link, signal_link,
                  original_dex_id, destination_type, hour_utc, day_of_week, session,
+                 original_price, utcnow_iso(), original_market_cap, utcnow_iso(),
                  signal_id),
             )
             conn.commit()
@@ -440,13 +443,13 @@ def get_signals_to_check_1h():
 
 
 def get_signals_to_check_6h():
-    """Signals needing 6-hour check (winners from 1h). One per token_address."""
+    """Signals needing 6-hour check (checked at 1h, win or loss). One per token_address."""
     with get_connection() as conn:
         six_hours_ago = (utcnow_naive() - timedelta(hours=6)).isoformat()
         return conn.execute(
             """SELECT * FROM signals WHERE id IN (
                 SELECT MIN(id) FROM signals
-                WHERE status = 'win' AND checked_1h = 1 AND checked_6h = 0 AND original_timestamp < ?
+                WHERE status IN ('win', 'loss') AND checked_1h = 1 AND checked_6h = 0 AND original_timestamp < ?
                 GROUP BY token_address
             )""",
             (six_hours_ago,),

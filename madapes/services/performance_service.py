@@ -134,7 +134,12 @@ async def run_1h_checks() -> list:
             # Update portfolio position
             current_price = safe_float(check_result["current_data"].get("price"))
             if current_price:
-                update_position(signal_id, current_price)
+                if is_winner:
+                    # Winners stay open, just update price (will close at 6h)
+                    update_position(signal_id, current_price)
+                else:
+                    # Losers close immediately at 1h - no point waiting
+                    close_position(signal_id, current_price)
 
             if is_winner:
                 winners.append((signal_row, check_result))
