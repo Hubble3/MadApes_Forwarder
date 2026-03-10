@@ -134,7 +134,7 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
           <p className="text-xs text-slate-300 font-mono">{formatPrice(signal.original_price)}</p>
         </div>
         <div>
-          <p className="text-[10px] text-amber-600 uppercase tracking-wider mb-0.5">Peak</p>
+          <p className="text-[10px] text-amber-600 uppercase tracking-wider mb-0.5">ATH</p>
           <p className="text-xs text-amber-400 font-mono">{formatPrice(peakPrice)}</p>
         </div>
         <div>
@@ -150,7 +150,7 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
           <p className="text-xs text-slate-300 font-mono">{formatCurrency(signal.original_market_cap)}</p>
         </div>
         <div>
-          <p className="text-[10px] text-amber-600 uppercase tracking-wider mb-0.5">Peak MC</p>
+          <p className="text-[10px] text-amber-600 uppercase tracking-wider mb-0.5">ATH MC</p>
           <p className="text-xs text-amber-400 font-mono">{formatCurrency(peakMC)}</p>
         </div>
         <div>

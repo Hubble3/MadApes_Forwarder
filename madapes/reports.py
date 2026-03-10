@@ -94,7 +94,7 @@ async def send_performance_update_to_report(signal_row, check_result, time_label
         if max_price:
             peak_mult = max_price / original_price if original_price and original_price > 0 else 0
             peak_pnl = ((max_price - original_price) / original_price * 100) if original_price and original_price > 0 else 0
-            peak_line = f"\U0001f31f Peak:     {format_price(max_price)}"
+            peak_line = f"\U0001f31f ATH:      {format_price(max_price)}"
             if max_mc:
                 peak_line += f" | MC {format_currency(max_mc)}"
             peak_line += f" | {peak_pnl:+.1f}% ({peak_mult:.2f}x)"
@@ -260,7 +260,7 @@ async def generate_daily_report():
                 if max_p and called_price and called_price > 0:
                     peak_pnl = ((max_p - called_price) / called_price) * 100
                     peak_mult = max_p / called_price
-                    peak_line = f"   \U0001f31f Peak:  Price {format_price(max_p)}"
+                    peak_line = f"   \U0001f31f ATH:   Price {format_price(max_p)}"
                     if max_mc:
                         peak_line += f" | MC {format_currency(max_mc)}"
                     peak_line += f" | {peak_pnl:+.2f}% ({peak_mult:.2f}x)"
@@ -526,7 +526,7 @@ async def generate_gold_daily_summary():
                 orig_p = safe_float(row["original_price"])
                 if orig_p and orig_p > 0:
                     peak_pnl = ((max_p - orig_p) / orig_p) * 100
-                    peak_str = f"   \U0001f31f Peak: {format_price(max_p)} ({peak_pnl:+.1f}%)"
+                    peak_str = f"   \U0001f31f ATH: {format_price(max_p)} ({peak_pnl:+.1f}%)"
                     if max_mc:
                         peak_str += f" | MC {format_currency(max_mc)}"
                     lines.append(peak_str)

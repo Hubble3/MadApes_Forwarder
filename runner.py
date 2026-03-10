@@ -190,7 +190,7 @@ def build_runner_alert_message(signal_row, current_data, velocity, vol_accel, de
         f"Entry: {called_time} | {format_price(original_price)} | MC {format_currency(original_market_cap)}",
     ]
     if max_price and max_price > original_price:
-        peak_line = f"\U0001f31f Peak:  {format_price(max_price)}"
+        peak_line = f"\U0001f31f ATH:   {format_price(max_price)}"
         if max_mc:
             peak_line += f" | MC {format_currency(max_mc)}"
         lines.append(peak_line)
@@ -250,7 +250,7 @@ def build_exit_alert_message(signal_row, current_data, reason):
         f"{chain_emoji} {(chain or 'CHAIN').upper()} \u00b7 {token_label}",
         f"\U0001f4cd CA: <code>{html.escape(str(token_address))}</code>",
         "",
-        f"Entry: {format_price(original_price)} | Peak: {format_price(max_price)} | Now: {format_price(current_price)}",
+        f"Entry: {format_price(original_price)} | ATH: {format_price(max_price)} | Now: {format_price(current_price)}",
         f"MC: {format_currency(current_market_cap)} | P&L: {price_change_pct:+.1f}%",
         "",
         f"\u26a0\ufe0f Reason: {reason}",
