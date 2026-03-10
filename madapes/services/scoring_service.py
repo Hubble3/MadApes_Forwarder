@@ -1,10 +1,12 @@
 """Signal confidence scoring service - computes composite confidence for each signal.
 
-Weights calibrated against real signal performance data:
-- Liquidity is the strongest predictor ($0 liq = always junk)
-- Solana outperforms Ethereum in our data
-- Caller track record matters most for repeat callers
-- Time-of-day effect is minor
+Weights calibrated against real signal performance data (n=24):
+- Market cap is the STRONGEST predictor: <10k = 100% WR, 100k+ = 0% WR
+- High liquidity/volume actually correlate with LOSSES (bigger MC = more liq)
+- $0 liquidity is NOT a death sentence (4/6 winners had $0 liq at detection)
+- Callers are similar (~30% WR each) — not a differentiator yet
+- Chain: only Solana has wins; Ethereum = 0% WR
+- 15m early momentum is a strong signal when available
 """
 import logging
 import math
@@ -16,32 +18,34 @@ from madapes.services.caller_service import get_caller_score
 logger = logging.getLogger(__name__)
 
 # Score weights (total = 100) — calibrated from real performance data
-W_CALLER = 25       # Caller track record (Gambles 44% WR vs T1T4N 8%)
-W_LIQUIDITY = 25    # Liquidity depth — strongest single predictor
-W_MC_RANGE = 20     # Market cap sweet spot (micro/tiny outperform large)
-W_CHAIN = 5         # Chain — minor factor with enough data
-W_TIME_OF_DAY = 5   # Time-of-day — minimal effect in our data
-W_MULTI_SOURCE = 20 # Multi-caller / multi-source bonus
+W_MC_RANGE = 35      # Market cap is the #1 predictor by far
+W_CALLER = 15        # Callers are similar (~30% WR) — minor differentiator
+W_LIQUIDITY = 10     # Tricky: high liq correlates with LOSSES, but $0 is risky
+W_CHAIN = 10         # Solana 32% WR, Ethereum 0% — meaningful
+W_TIME_OF_DAY = 5    # Minimal effect
+W_MULTI_SOURCE = 25  # Multi-caller = high conviction (theoretical, few examples)
 
-# Chain base scores (calibrated from real data: Solana 25% WR, Ethereum 0%)
+# Chain base scores (calibrated: Solana 32% WR, Ethereum 0%)
 CHAIN_SCORES = {
-    "solana": 0.8,
-    "base": 0.7,
-    "arbitrum": 0.7,
-    "ethereum": 0.4,   # 0% win rate in our data — lower confidence
-    "polygon": 0.5,
-    "optimism": 0.6,
-    "bsc": 0.4,
+    "solana": 0.9,
+    "base": 0.6,
+    "arbitrum": 0.6,
+    "ethereum": 0.2,   # 0% WR in our data
+    "polygon": 0.4,
+    "optimism": 0.5,
+    "bsc": 0.3,
 }
 
-# MC sweet spot: micro/tiny caps (<50k) had 40% WR, medium/large had 0%
-MC_SWEET_SPOT_MIN = 10_000
-MC_SWEET_SPOT_MAX = 100_000   # Narrowed — our best performers are small caps
+# MC sweet spot: <10k = 100% WR, 10k-50k = 31% WR, 50k-100k = 25%, 100k+ = 0%
+MC_MICRO_MAX = 10_000      # 100% WR in our data
+MC_SMALL_MAX = 50_000      # 31% WR
+MC_MEDIUM_MAX = 100_000    # 25% WR
+# Above 100k = 0% WR
 
-# Liquidity thresholds (tightened — $0 liq was always junk)
-LIQ_MINIMUM = 5_000        # Below this = near zero score
-LIQ_GOOD = 15_000          # Decent exit possible
-LIQ_IDEAL = 50_000         # Strong liquidity
+# Liquidity: NOT a simple "more is better" — $0 liq winners exist
+# But very high liq ($50k+) correlates with high MC (= losers)
+LIQ_SWEET_MIN = 3_000      # Some liquidity = can exit
+LIQ_SWEET_MAX = 30_000     # Above this = usually high MC = lower WR
 
 
 def _caller_component(sender_id: Optional[int]) -> float:
@@ -55,32 +59,51 @@ def _caller_component(sender_id: Optional[int]) -> float:
 
 
 def _mc_range_component(market_cap: Optional[float]) -> float:
-    """Market cap range component (0-1). Small caps outperform in our data."""
+    """Market cap range component (0-1).
+
+    Our data: <10k = 100% WR, 10k-50k = 31%, 50k-100k = 25%, 100k+ = 0%.
+    Smaller MC = higher score.
+    """
     if market_cap is None or market_cap <= 0:
-        return 0.2  # Unknown MC = risky
-    if MC_SWEET_SPOT_MIN <= market_cap <= MC_SWEET_SPOT_MAX:
-        return 1.0
-    if market_cap < MC_SWEET_SPOT_MIN:
-        # Very micro — still viable but riskier
-        return max(0.3, market_cap / MC_SWEET_SPOT_MIN)
-    # Above sweet spot — diminishing returns
-    # $100K = 1.0, $500K = 0.6, $2M = 0.3
-    ratio = market_cap / MC_SWEET_SPOT_MAX
-    return max(0.15, 1.0 / (1.0 + math.log10(ratio) * 1.5))
+        return 0.5  # Unknown MC = neutral (don't penalize, could be micro)
+    if market_cap <= MC_MICRO_MAX:
+        return 1.0  # <$10K = best zone (100% WR)
+    if market_cap <= MC_SMALL_MAX:
+        # $10K-$50K: linearly scale from 0.9 to 0.7
+        ratio = (market_cap - MC_MICRO_MAX) / (MC_SMALL_MAX - MC_MICRO_MAX)
+        return 0.9 - ratio * 0.2
+    if market_cap <= MC_MEDIUM_MAX:
+        # $50K-$100K: 0.5 (25% WR — below average)
+        return 0.5
+    # Above $100K: 0% WR in our data — strong penalty
+    # $100K = 0.25, $500K = 0.1, $1M+ = 0.05
+    ratio = market_cap / MC_MEDIUM_MAX
+    return max(0.05, 0.25 / math.log10(ratio + 1))
 
 
 def _liquidity_component(liquidity: Optional[float]) -> float:
-    """Liquidity component (0-1). Strongest single predictor of signal quality."""
+    """Liquidity component (0-1).
+
+    Counterintuitive: high liquidity does NOT predict winners.
+    - $0 liq: 4 winners, 6 losers (mixed — not a death sentence)
+    - $5k-15k: 0W/2L
+    - $15k-50k: 3W/7L (30%)
+    - $50k+: 0W/2L (0%)
+
+    We give a slight bonus for having SOME liquidity, but penalize very high.
+    """
     if liquidity is None or liquidity <= 0:
-        return 0.0  # No liquidity = near-certain junk
-    if liquidity >= LIQ_IDEAL:
-        return 1.0
-    if liquidity >= LIQ_GOOD:
-        return 0.6 + 0.4 * ((liquidity - LIQ_GOOD) / (LIQ_IDEAL - LIQ_GOOD))
-    if liquidity >= LIQ_MINIMUM:
-        return 0.3 + 0.3 * ((liquidity - LIQ_MINIMUM) / (LIQ_GOOD - LIQ_MINIMUM))
-    # Below minimum — very risky
-    return max(0.05, 0.3 * (liquidity / LIQ_MINIMUM))
+        return 0.4  # $0 liq = neutral-low (not zero — winners had $0 liq)
+    if liquidity <= LIQ_SWEET_MIN:
+        # Very low but exists: slightly better than $0
+        return 0.5
+    if liquidity <= LIQ_SWEET_MAX:
+        # Sweet spot: enough to exit, not so high it signals large MC
+        return 0.7
+    # High liquidity: correlates with large MC = losers
+    # $50K = 0.4, $100K = 0.3, $250K = 0.2
+    ratio = liquidity / LIQ_SWEET_MAX
+    return max(0.15, 0.5 / ratio)
 
 
 def _chain_component(chain: Optional[str]) -> float:
@@ -119,21 +142,21 @@ def compute_signal_confidence(
 ) -> float:
     """Compute composite signal confidence score (0-100).
 
-    Components (calibrated from real data):
-    - Caller score (25pts): track record of the signal sender
-    - Liquidity (25pts): strongest predictor — $0 liq = always junk
-    - MC range (20pts): small caps outperform in our data
-    - Chain (5pts): Solana >> Ethereum in our data
+    Components (calibrated from real data, n=24):
+    - MC range (35pts): THE strongest predictor — micro caps massively outperform
+    - Multi-source (25pts): multiple callers = high conviction
+    - Caller score (15pts): track record — callers are similar so far
+    - Liquidity (10pts): NOT "more is better" — high liq = big MC = losers
+    - Chain (10pts): Solana >> Ethereum
     - Time of day (5pts): minor effect
-    - Multi-source (20pts): multiple callers = high conviction
     """
-    caller_pts = _caller_component(sender_id) * W_CALLER
     mc_pts = _mc_range_component(market_cap) * W_MC_RANGE
+    caller_pts = _caller_component(sender_id) * W_CALLER
     liq_pts = _liquidity_component(liquidity) * W_LIQUIDITY
     chain_pts = _chain_component(chain) * W_CHAIN
     time_pts = _time_of_day_component(timestamp) * W_TIME_OF_DAY
 
-    # Multi-source bonus: 1 caller = 0pts, 2 = 12pts, 3+ = 20pts
+    # Multi-source bonus: 1 caller = 0pts, 2 = 15pts, 3+ = 25pts
     if multi_source_count >= 3:
         multi_pts = W_MULTI_SOURCE
     elif multi_source_count == 2:
@@ -141,17 +164,17 @@ def compute_signal_confidence(
     else:
         multi_pts = 0.0
 
-    total = caller_pts + mc_pts + liq_pts + chain_pts + time_pts + multi_pts
+    total = mc_pts + caller_pts + liq_pts + chain_pts + time_pts + multi_pts
     return min(round(total, 1), 100.0)
 
 
 def confidence_label(score: float) -> str:
     """Return a short label for a confidence score."""
-    if score >= 70:
+    if score >= 65:
         return "HIGH"
     elif score >= 45:
         return "MEDIUM"
-    elif score >= 25:
+    elif score >= 30:
         return "LOW"
     else:
         return "VERY LOW"

@@ -260,13 +260,30 @@ def build_exit_alert_message(signal_row, current_data, reason):
 
 
 def build_tp_alert_line(signal_row, tp_labels, current_price):
-    """Build a single line for the TP milestone summary."""
+    """Build a TP milestone entry with actionable advice."""
     chain_emoji = CHAIN_EMOJI_MAP.get((signal_row["chain"] or "").lower(), "\U0001f48e")
     token_label = token_display_label(signal_row["token_name"], signal_row["token_symbol"])
     original_price = safe_float(signal_row["original_price"])
     gain_pct = ((current_price - original_price) / original_price * 100) if original_price and original_price > 0 else 0
     tp_text = ", ".join(tp_labels)
-    return f"{chain_emoji} {token_label} hit <b>{tp_text}</b> ({gain_pct:+.0f}% from entry)"
+
+    # Actionable advice based on which TP level was hit
+    highest_tp = tp_labels[-1]  # Last label = highest milestone hit
+    if highest_tp in ("2x", "3x"):
+        advice = "Consider taking profits or setting a tight stop-loss"
+    elif highest_tp == "+50%":
+        advice = "Secure partial profits — move stop to entry"
+    else:
+        advice = "Momentum building — watch for continuation"
+
+    # DexScreener link
+    ds_link = signal_row.get("original_dexscreener_link") or ""
+    link_part = f' | <a href="{html.escape(ds_link)}">Chart</a>' if ds_link else ""
+
+    line = f"{chain_emoji} <b>{token_label}</b> hit <b>{tp_text}</b> ({gain_pct:+.0f}%)"
+    line += f"\n   Now: {format_price(current_price)} | Entry: {format_price(original_price)}{link_part}"
+    line += f"\n   \u27a1\ufe0f <i>{advice}</i>"
+    return line
 
 
 async def runner_watcher(client, report_destination_entity):
@@ -337,7 +354,7 @@ async def runner_watcher(client, report_destination_entity):
                     if current_price:
                         new_tps = check_tp_milestones(signal_id, current_price)
                         if new_tps:
-                            _tp_alerts.append(build_tp_alert_line(signal_row, new_tps, current_price))
+                            _tp_alerts.append((signal_row, new_tps, current_price))
 
                     if is_runner:
                         tier = details.get("tier", "runner")
@@ -408,7 +425,7 @@ async def runner_watcher(client, report_destination_entity):
                     if current_price:
                         new_tps = check_tp_milestones(signal_id, current_price)
                         if new_tps:
-                            _tp_alerts.append(build_tp_alert_line(signal_row, new_tps, current_price))
+                            _tp_alerts.append((signal_row, new_tps, current_price))
 
                     should_exit, exit_reason = detect_exit_signal(signal_row, current_data)
                     if should_exit:
@@ -424,18 +441,58 @@ async def runner_watcher(client, report_destination_entity):
 
             # Send consolidated TP milestone alerts
             if _tp_alerts and report_destination_entity:
-                lines = ["\u2501" * 32, "\U0001f3af <b>TAKE-PROFIT MILESTONES</b>", ""]
-                for entry in _tp_alerts:
-                    lines.append(f"\u2022 {entry}")
-                lines.append("")
-                lines.append("\u2501" * 32)
+                # Build report channel alert (all milestones)
+                alert_lines = ["\u2501" * 32, "\U0001f4b0 <b>TAKE-PROFIT ALERT</b>", ""]
+                for i, (sig_row, tps, price) in enumerate(_tp_alerts):
+                    alert_lines.append(build_tp_alert_line(sig_row, tps, price))
+                    if i < len(_tp_alerts) - 1:
+                        alert_lines.append("")
+                alert_lines.append("")
+                alert_lines.append("\u2501" * 32)
                 try:
                     await client.send_message(
-                        report_destination_entity, "\n".join(lines),
+                        report_destination_entity, "\n".join(alert_lines),
                         parse_mode="html", link_preview=False,
                     )
                 except Exception as e:
                     logger.error(f"Failed to send TP alert: {e}")
+
+                # Send major TP alerts (2x, 3x) to signal destination channels
+                from madapes.context import app_context as _ctx
+                for sig_row, tps, price in _tp_alerts:
+                    major_tps = [t for t in tps if t in ("2x", "3x")]
+                    if not major_tps:
+                        continue
+                    # Determine which channel the signal was forwarded to
+                    dest_type = sig_row.get("destination_type") or ""
+                    dest_entity = None
+                    if "under" in dest_type.lower() or "small" in dest_type.lower():
+                        dest_entity = _ctx.destination_entity_under_80k
+                    elif "over" in dest_type.lower() or "large" in dest_type.lower():
+                        dest_entity = _ctx.destination_entity_80k_or_more
+                    if not dest_entity:
+                        dest_entity = _ctx.destination_entity_under_80k  # Default
+
+                    chain_emoji = CHAIN_EMOJI_MAP.get((sig_row["chain"] or "").lower(), "\U0001f48e")
+                    label = token_display_label(sig_row["token_name"], sig_row["token_symbol"])
+                    orig_p = safe_float(sig_row["original_price"])
+                    gain = ((price - orig_p) / orig_p * 100) if orig_p and orig_p > 0 else 0
+                    tp_text = ", ".join(major_tps)
+                    ds_link = sig_row.get("original_dexscreener_link") or ""
+                    link_part = f'\n\U0001f4ca <a href="{html.escape(ds_link)}">DexScreener</a>' if ds_link else ""
+
+                    dest_msg = (
+                        f"\U0001f4b0 <b>TAKE PROFIT \u2014 {tp_text}</b>\n\n"
+                        f"{chain_emoji} <b>{label}</b> is up <b>{gain:+.0f}%</b> from entry!\n"
+                        f"Entry: {format_price(orig_p)} \u2192 Now: {format_price(price)}\n"
+                        f"\u27a1\ufe0f <i>Consider taking profits or setting a tight stop-loss</i>"
+                        f"{link_part}"
+                    )
+                    try:
+                        await client.send_message(dest_entity, dest_msg, parse_mode="html", link_preview=False)
+                        logger.info(f"TP alert ({tp_text}) sent to destination for signal {sig_row['id']}")
+                    except Exception as e:
+                        logger.error(f"Failed to send destination TP alert: {e}")
 
             # Send consolidated exit summary
             if exit_entries and report_destination_entity:
