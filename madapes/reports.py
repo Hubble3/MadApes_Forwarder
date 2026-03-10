@@ -386,15 +386,17 @@ async def generate_daily_report():
         analytics = run_daily_analytics(report_date)
         report_lines.extend(build_daily_analytics_block(analytics))
 
-        # Cleanup
+        # Cleanup — smart: only remove junk, keep valuable losses for learning
         report_lines.append("")
         report_lines.append("\U0001f9f9 <b>Cleanup</b>")
-        deleted_count = delete_losing_signals()
+        from db import delete_junk_signals
+        junk_deleted, kept = delete_junk_signals()
         trimmed = enforce_capacity(MAX_SIGNALS)
         remaining_count = get_signals_count()
-        report_lines.append(f"\U0001f5d1\ufe0f Deleted losers: {deleted_count}")
+        report_lines.append(f"\U0001f5d1\ufe0f Junk removed: {junk_deleted} (dead tokens, no traction)")
+        report_lines.append(f"\U0001f4da Kept for learning: {kept} (runners, pumps, good data)")
         report_lines.append(f"\U0001f4c9 Capacity trimmed: {trimmed} (max {MAX_SIGNALS})")
-        report_lines.append(f"Remaining after cleanup: {remaining_count}")
+        report_lines.append(f"Remaining: {remaining_count}")
         report_lines.append("\u2501" * 32)
 
         report_text = "\n".join(report_lines).strip()

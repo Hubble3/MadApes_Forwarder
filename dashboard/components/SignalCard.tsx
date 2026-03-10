@@ -25,6 +25,12 @@ const tierConfig: Record<string, { bg: string; text: string; label: string; icon
   bronze: { bg: 'bg-orange-700/20', text: 'text-orange-500', label: 'BRONZE', icon: '\u{1F949}' },
 };
 
+const qualityConfig: Record<string, { bg: string; text: string; label: string }> = {
+  valuable: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: 'VALUABLE' },
+  borderline: { bg: 'bg-yellow-500/15', text: 'text-yellow-400', label: 'BORDERLINE' },
+  junk: { bg: 'bg-red-500/15', text: 'text-red-400', label: 'JUNK' },
+};
+
 const momentumConfig: Record<string, { bg: string; text: string; label: string }> = {
   early_runner: { bg: 'bg-emerald-500/20', text: 'text-emerald-400', label: 'EARLY RUNNER' },
   confirmed: { bg: 'bg-green-500/20', text: 'text-green-400', label: 'CONFIRMED' },
@@ -114,6 +120,11 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
           {signal.runner_alerted === 1 && (
             <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/20 animate-pulse">
               RUNNER
+            </span>
+          )}
+          {signal.signal_quality && qualityConfig[signal.signal_quality] && signal.signal_quality !== 'valuable' && (
+            <span className={clsx('px-1.5 py-0.5 rounded-md text-[10px] font-bold', qualityConfig[signal.signal_quality].bg, qualityConfig[signal.signal_quality].text)}>
+              {qualityConfig[signal.signal_quality].label}
             </span>
           )}
         </div>

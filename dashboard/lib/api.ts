@@ -51,6 +51,7 @@ export interface Signal {
   max_price_seen_at: string | null;
   max_market_cap_seen: number | null;
   max_market_cap_seen_at: string | null;
+  signal_quality: string | null;
 }
 
 export interface LivePrice {

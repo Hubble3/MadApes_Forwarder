@@ -17,7 +17,11 @@ router = APIRouter()
 def _row_to_dict(row):
     if row is None:
         return None
-    return {key: row[key] for key in row.keys()}
+    d = {key: row[key] for key in row.keys()}
+    # Add computed signal quality classification
+    from db import classify_signal_quality
+    d["signal_quality"] = classify_signal_quality(row)
+    return d
 
 
 def _mc_filter_clause():

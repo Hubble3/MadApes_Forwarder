@@ -104,6 +104,7 @@ export default function SignalDetailPage() {
     { label: 'Runner Alert', value: s.runner_alerted ? 'Yes' : 'No', color: s.runner_alerted ? 'text-orange-400' : undefined },
     { label: 'Confidence', value: s.confidence_score !== null && s.confidence_score !== undefined ? `${s.confidence_score}/100` : 'N/A' },
     { label: 'Tags', value: s.tags || 'None' },
+    { label: 'Signal Quality', value: s.signal_quality ? s.signal_quality.toUpperCase() : 'N/A', color: s.signal_quality === 'valuable' ? 'text-emerald-400' : s.signal_quality === 'junk' ? 'text-red-400' : s.signal_quality === 'borderline' ? 'text-yellow-400' : undefined },
   ];
 
   return (
@@ -134,6 +135,16 @@ export default function SignalDetailPage() {
         </span>
         {s.runner_alerted === 1 && (
           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-500/20 text-orange-400">RUNNER</span>
+        )}
+        {s.signal_quality && (
+          <span className={clsx(
+            'px-2 py-0.5 rounded text-[10px] font-bold',
+            s.signal_quality === 'valuable' && 'bg-emerald-500/15 text-emerald-400',
+            s.signal_quality === 'borderline' && 'bg-yellow-500/15 text-yellow-400',
+            s.signal_quality === 'junk' && 'bg-red-500/15 text-red-400',
+          )}>
+            {s.signal_quality.toUpperCase()}
+          </span>
         )}
         {livePrice && (
           <span className="flex items-center gap-1 text-[10px] text-slate-600">

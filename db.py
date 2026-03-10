@@ -629,13 +629,85 @@ def update_max_tracking(signal_id, current_price, current_market_cap):
         logger.error(f"Error updating max tracking: {e}")
 
 
-def delete_losing_signals():
+def classify_signal_quality(signal_row) -> str:
+    """Classify a signal as 'valuable', 'borderline', or 'junk'.
+
+    Valuable: worth learning from (had real price action, runner, decent MC).
+    Borderline: some activity but marginal.
+    Junk: dead token, no traction, pollutes ML/insights data.
+    """
+    original_price = signal_row["original_price"] or 0
+    max_price = signal_row["max_price_seen"] or 0
+    original_mc = signal_row["original_market_cap"] or 0
+    original_liq = signal_row["original_liquidity"] or 0
+    runner = signal_row["runner_alerted"] or 0
+    status = signal_row["status"] or ""
+
+    # Winners are always valuable
+    if status == "win":
+        return "valuable"
+
+    # Runners are always valuable (even if they lost — teaches about exit timing)
+    if runner:
+        return "valuable"
+
+    # ATH gain from entry — did the token ever show life?
+    ath_gain_pct = 0.0
+    if original_price and original_price > 0 and max_price:
+        ath_gain_pct = ((max_price - original_price) / original_price) * 100
+
+    # Token that pumped 20%+ at some point is worth learning from
+    if ath_gain_pct >= 20:
+        return "valuable"
+
+    # Decent MC + some movement = borderline (keep for data volume)
+    if original_mc >= 50000 and ath_gain_pct >= 5:
+        return "borderline"
+
+    # Had real liquidity and some activity
+    if original_liq >= 10000 and ath_gain_pct >= 10:
+        return "borderline"
+
+    # Everything else: token never pumped, no liquidity, tiny MC = junk
+    return "junk"
+
+
+def delete_junk_signals():
+    """Delete signals classified as junk — tokens that never showed any life.
+    Keeps valuable signals (winners, runners, tokens that pumped) for learning.
+    Returns (junk_deleted, kept_count) tuple.
+    """
     with get_connection() as conn:
-        cursor = conn.execute('DELETE FROM signals WHERE status = "loss"')
-        deleted_count = cursor.rowcount
-        conn.commit()
-        logger.info(f"Deleted {deleted_count} losing signals")
-        return deleted_count
+        rows = conn.execute(
+            "SELECT * FROM signals WHERE status IN ('loss', 'active')"
+        ).fetchall()
+
+        junk_ids = []
+        kept = 0
+        for row in rows:
+            quality = classify_signal_quality(row)
+            if quality == "junk" and row["status"] == "loss":
+                junk_ids.append(row["id"])
+            else:
+                kept += 1
+
+        if junk_ids:
+            placeholders = ",".join("?" * len(junk_ids))
+            conn.execute(f"DELETE FROM signals WHERE id IN ({placeholders})", junk_ids)
+            # Also clean up related portfolio entries
+            conn.execute(f"DELETE FROM portfolio_entries WHERE signal_id IN ({placeholders})", junk_ids)
+            conn.commit()
+
+        logger.info(f"Signal cleanup: {len(junk_ids)} junk deleted, {kept} kept for learning")
+        return len(junk_ids), kept
+
+
+def delete_losing_signals():
+    """DEPRECATED: Use delete_junk_signals() instead.
+    Kept for backwards compat — now delegates to smart cleanup.
+    """
+    deleted, _ = delete_junk_signals()
+    return deleted
 
 
 def enforce_capacity(max_count):
