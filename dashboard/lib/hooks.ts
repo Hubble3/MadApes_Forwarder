@@ -6,6 +6,16 @@ import { showToast } from '@/components/Toast';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
 
+function sendBrowserNotification(title: string, body: string) {
+  if (typeof window === 'undefined') return;
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '/favicon.ico' });
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission();
+  }
+}
+
 // WebSocket hook for real-time updates + toast notifications
 export function useWebSocket() {
   const queryClient = useQueryClient();
@@ -29,6 +39,20 @@ export function useWebSocket() {
           const d = msg.data || {};
 
           // Toast notifications
+          if (t.includes('SignalForwarded') || t.includes('signal_forwarded')) {
+            const isGold = d.signal_tier === 'gold';
+            const tokenLabel = d.token_symbol || d.token_name || d.token_address?.slice(0, 8) || 'Token';
+            const mcLabel = d.market_cap ? `$${(d.market_cap / 1000).toFixed(0)}K` : 'N/A';
+            const body = `${tokenLabel} on ${(d.chain || '').toUpperCase()} - MC: ${mcLabel}`;
+            showToast({
+              type: isGold ? 'gold' : 'signal',
+              title: isGold ? 'GOLD Signal' : 'New Signal',
+              body,
+            });
+            if (isGold) {
+              sendBrowserNotification(`GOLD Signal: ${tokenLabel}`, body);
+            }
+          }
           if (t.includes('SignalDetected') || t.includes('signal_detected')) {
             showToast({
               type: 'signal',
@@ -37,11 +61,14 @@ export function useWebSocket() {
             });
           }
           if (t.includes('Runner') || t.includes('runner')) {
+            const runnerLabel = d.token_symbol || d.token_name || 'Token';
+            const runnerBody = `${runnerLabel} is running! ${d.velocity ? `+${d.velocity.toFixed(1)}%/min` : ''}`;
             showToast({
               type: 'runner',
               title: 'Runner Alert',
-              body: `${d.token_symbol || d.token_name || 'Token'} is running! ${d.velocity ? `+${d.velocity.toFixed(1)}%/min` : ''}`,
+              body: runnerBody,
             });
+            sendBrowserNotification(`Runner: ${runnerLabel}`, runnerBody);
           }
 
           // Invalidate relevant queries
@@ -100,7 +127,7 @@ export function useOverview() {
   });
 }
 
-export function useSignals(params?: { status?: string; chain?: string; search?: string; limit?: number; offset?: number }) {
+export function useSignals(params?: { status?: string; chain?: string; search?: string; tier?: string; sort?: string; order?: string; limit?: number; offset?: number }) {
   return useQuery({
     queryKey: ['signals', params],
     queryFn: () => api.signals.list(params),
@@ -184,6 +211,14 @@ export function useAttribution() {
   return useQuery({
     queryKey: ['attribution'],
     queryFn: () => api.analytics.attribution(),
+    refetchInterval: 60000,
+  });
+}
+
+export function useInsights() {
+  return useQuery({
+    queryKey: ['insights'],
+    queryFn: () => api.insights.get(),
     refetchInterval: 60000,
   });
 }

@@ -71,7 +71,7 @@ def build_info_message(
     sender_name, sender_id, sender_username, group_name, timestamp,
     tokens_with_data, dexscreener_data, trading_info, contract_addresses,
     message_link, primary_dexscreener_link,
-    caller_badge="", confidence_badge="", tags_text="", multi_caller_count=1,
+    caller_badge="", confidence_badge="", strategy_badge="", tags_text="", multi_caller_count=1,
     safety_text="",
 ):
     """Build the organized info message for a forwarded signal.
@@ -93,8 +93,10 @@ def build_info_message(
         sender_part += f" @{html.escape(sender_username)}"
     info_sections.append(f"{sender_part} | \U0001f4cd {html.escape(group_name)} | \U0001f550 <code>{timestamp}</code>")
 
-    # Intelligence line: confidence + tags + multi-caller
+    # Intelligence line: strategy tier + confidence + tags + multi-caller
     intel_parts = []
+    if strategy_badge:
+        intel_parts.append(strategy_badge)
     if confidence_badge:
         intel_parts.append(f"\U0001f3af {confidence_badge}")
     if multi_caller_count >= 2:

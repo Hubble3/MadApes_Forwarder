@@ -1,6 +1,6 @@
 'use client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState, createContext, useContext } from 'react';
+import { useState, useEffect, createContext, useContext } from 'react';
 import { useWebSocket } from '@/lib/hooks';
 import ToastContainer from '@/components/Toast';
 
@@ -10,6 +10,14 @@ export function useWsConnected() { return useContext(WsContext); }
 
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const connected = useWebSocket();
+
+  // Request notification permission on first visit
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   return (
     <WsContext.Provider value={connected}>
       {children}

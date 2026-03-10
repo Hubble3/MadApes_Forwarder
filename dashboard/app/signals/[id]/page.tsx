@@ -61,6 +61,10 @@ export default function SignalDetailPage() {
   const currentPrice = livePrice?.price ?? s.current_price;
   const currentMC = livePrice?.market_cap ?? s.current_market_cap;
 
+  // Peak = max of stored peak vs live price
+  const peakPrice = Math.max(s.max_price_seen ?? 0, currentPrice ?? 0) || null;
+  const peakMC = Math.max(s.max_market_cap_seen ?? 0, currentMC ?? 0) || null;
+
   let pnl = s.price_change_percent;
   let multiplier = s.multiplier;
   if (livePrice?.price && s.original_price && s.original_price > 0) {
@@ -84,8 +88,10 @@ export default function SignalDetailPage() {
     { label: 'Chain', value: chain.toUpperCase() },
     { label: 'Status', value: liveStatus.toUpperCase(), color: liveStatus === 'win' ? 'text-emerald-400' : liveStatus === 'loss' ? 'text-red-400' : undefined },
     { label: 'Entry Price', value: formatPrice(s.original_price), mono: true },
+    { label: 'Peak Price', value: formatPrice(peakPrice), mono: true, color: peakPrice ? 'text-amber-400' : undefined },
     { label: 'Live Price', value: formatPrice(currentPrice), mono: true, color: livePrice ? 'text-white' : undefined },
     { label: 'Entry Market Cap', value: formatCurrency(s.original_market_cap) },
+    { label: 'Peak Market Cap', value: formatCurrency(peakMC), color: peakMC ? 'text-amber-400' : undefined },
     { label: 'Live Market Cap', value: formatCurrency(currentMC), color: livePrice ? 'text-white' : undefined },
     { label: 'Liquidity', value: formatCurrency(livePrice?.liquidity ?? s.original_liquidity) },
     { label: 'Volume 24h', value: formatCurrency(livePrice?.volume_24h ?? s.original_volume) },

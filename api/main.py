@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import init_database
-from api.routes import signals, callers, portfolio, analytics, leaderboard, runners, webhooks, ml, settings, strategies
+from api.routes import signals, callers, portfolio, analytics, leaderboard, runners, webhooks, ml, settings, strategies, insights
 from api.websocket import websocket_endpoint, broadcast, update_bot_heartbeat, get_bot_status
 
 
@@ -30,10 +30,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS for dashboard
+# CORS for dashboard — configurable via CORS_ORIGINS env var
+_cors_env = os.getenv("CORS_ORIGINS", "").strip()
+_cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else [
+    "http://localhost:3000", "http://127.0.0.1:3000",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,6 +54,7 @@ app.include_router(webhooks.router, prefix="/api/webhooks", tags=["webhooks"])
 app.include_router(ml.router, prefix="/api/ml", tags=["ml"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(strategies.router, prefix="/api/strategies", tags=["strategies"])
+app.include_router(insights.router, prefix="/api/insights", tags=["insights"])
 
 
 @app.websocket("/ws")

@@ -123,7 +123,7 @@ async def strategy_performance(api_key: str = Depends(verify_api_key)):
         cols = conn.execute("PRAGMA table_info(signals)").fetchall()
         col_names = {r["name"] for r in cols}
         if "strategy" not in col_names:
-            return {"strategies": {}, "message": "Strategy column not yet populated."}
+            return {"performance": {}, "message": "Strategy column not yet populated."}
 
         # Check if strategy column exists in portfolio_entries
         pe_cols = conn.execute("PRAGMA table_info(portfolio_entries)").fetchall()
@@ -185,4 +185,4 @@ async def strategy_performance(api_key: str = Depends(verify_api_key)):
             "worst_return_pct": r["worst_return_pct"] or 0,
         }
 
-    return {"strategies": strategies}
+    return {"performance": strategies}

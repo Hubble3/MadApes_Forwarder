@@ -20,11 +20,30 @@ const chainFilters = [
   { key: 'base', label: 'Base' },
 ];
 
+const tierFilters = [
+  { key: '', label: 'All Tiers' },
+  { key: 'gold', label: 'GOLD' },
+  { key: 'silver', label: 'SILVER' },
+  { key: 'bronze', label: 'BRONZE' },
+];
+
+const sortOptions = [
+  { key: 'date', label: 'Date' },
+  { key: 'pnl', label: 'P&L %' },
+  { key: 'multiplier', label: 'Multiplier' },
+  { key: 'market_cap', label: 'Market Cap' },
+  { key: 'confidence', label: 'Confidence' },
+  { key: 'runner_potential', label: 'Runner Potential' },
+];
+
 export default function SignalsPage() {
   const [status, setStatus] = useState('all');
   const [chain, setChain] = useState('');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [tier, setTier] = useState('');
+  const [sort, setSort] = useState('date');
+  const [order, setOrder] = useState<'desc' | 'asc'>('desc');
   const [page, setPage] = useState(1);
   const limit = 20;
 
@@ -32,11 +51,14 @@ export default function SignalsPage() {
     status: status === 'all' ? undefined : status,
     chain: chain || undefined,
     search: search || undefined,
+    tier: tier || undefined,
+    sort,
+    order,
     limit,
     offset: (page - 1) * limit,
   });
 
-  useEffect(() => { setPage(1); }, [status, chain, search]);
+  useEffect(() => { setPage(1); }, [status, chain, search, tier, sort, order]);
 
   const { data: livePriceData } = useLivePrices();
   const livePrices = livePriceData?.prices || {};
@@ -122,6 +144,46 @@ export default function SignalsPage() {
             <option key={f.key} value={f.key}>{f.label}</option>
           ))}
         </select>
+
+        {/* Tier filter */}
+        <select
+          value={tier}
+          onChange={(e) => setTier(e.target.value)}
+          className={clsx(
+            'bg-dark-700 border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500/50 appearance-none cursor-pointer',
+            tier === 'gold' ? 'border-yellow-500/50 text-yellow-400' : 'border-dark-400/30 text-slate-300'
+          )}
+        >
+          {tierFilters.map((f) => (
+            <option key={f.key} value={f.key}>{f.label}</option>
+          ))}
+        </select>
+
+        {/* Sort */}
+        <div className="flex items-center gap-1">
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            className="bg-dark-700 border border-dark-400/30 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500/50 appearance-none cursor-pointer"
+          >
+            {sortOptions.map((s) => (
+              <option key={s.key} value={s.key}>{s.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setOrder(o => o === 'desc' ? 'asc' : 'desc')}
+            className="p-2 rounded-lg bg-dark-700 border border-dark-400/30 text-slate-400 hover:text-slate-200 transition-colors"
+            title={order === 'desc' ? 'Descending' : 'Ascending'}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              {order === 'desc' ? (
+                <path d="M12 5v14M5 12l7 7 7-7" />
+              ) : (
+                <path d="M12 19V5M5 12l7-7 7 7" />
+              )}
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Signals grid */}

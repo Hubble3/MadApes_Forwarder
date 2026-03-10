@@ -76,3 +76,12 @@ MIN_MARKET_CAP = float(os.getenv('MIN_MARKET_CAP', '0'))
 RUNNER_VELOCITY_MIN = float(os.getenv('RUNNER_VELOCITY_MIN', '1.5'))   # % per minute
 RUNNER_VOL_ACCEL_MIN = float(os.getenv('RUNNER_VOL_ACCEL_MIN', '1.5'))  # 5m vol vs 24h rate
 RUNNER_POLL_INTERVAL = int(os.getenv('RUNNER_POLL_INTERVAL', '90'))    # seconds
+
+# Runner exit signal thresholds
+RUNNER_EXIT_DRAWDOWN_PCT = float(os.getenv('RUNNER_EXIT_DRAWDOWN_PCT', '40'))    # % drawdown from peak
+RUNNER_EXIT_LIQ_DRAIN_PCT = float(os.getenv('RUNNER_EXIT_LIQ_DRAIN_PCT', '50'))  # % liquidity removed
+RUNNER_DEDUP_WINDOW = int(os.getenv('RUNNER_DEDUP_WINDOW', '1800'))              # seconds (30min)
+
+# GOLD tier destination — high-conviction signals get their own channel
+# If not set, GOLD signals go to the normal MC-based destination
+DESTINATION_GOLD = os.getenv('DESTINATION_GOLD', '').strip() or None

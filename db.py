@@ -147,6 +147,23 @@ def init_database(max_signals=100):
             if col not in existing_cols:
                 cursor.execute(f"ALTER TABLE signals ADD COLUMN {col} {col_type}")
 
+        # Strategy engine & momentum confirmation columns
+        strategy_migrations = [
+            ("runner_potential_score", "REAL"),
+            ("signal_tier", "TEXT"),
+            ("message_quality_score", "REAL"),
+            ("pair_age_seconds", "REAL"),
+            ("momentum_check_5m", "TEXT"),
+            ("momentum_check_15m", "TEXT"),
+            ("price_5m", "REAL"),
+            ("price_15m", "REAL"),
+            ("exit_alerted", "INTEGER DEFAULT 0"),
+            ("exit_alerted_at", "TEXT"),
+        ]
+        for col, col_type in strategy_migrations:
+            if col not in existing_cols:
+                cursor.execute(f"ALTER TABLE signals ADD COLUMN {col} {col_type}")
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS analytics_daily (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -456,7 +473,7 @@ def get_signals_for_runner_check(max_age_minutes=60, min_age_minutes=2):
 
 
 def get_runner_exit_candidates(max_age_hours=24):
-    """Active signals that were runner-alerted, for exit signal monitoring."""
+    """Active signals that were runner-alerted and haven't had exit alert yet."""
     with get_connection() as conn:
         now = utcnow_naive()
         oldest = (now - timedelta(hours=max_age_hours)).isoformat()
@@ -465,11 +482,22 @@ def get_runner_exit_candidates(max_age_hours=24):
             SELECT * FROM signals
             WHERE status = 'active' AND token_type = 'contract'
             AND runner_alerted = 1
+            AND COALESCE(exit_alerted, 0) = 0
             AND original_timestamp > ?
             ORDER BY runner_alerted_at DESC
             """,
             (oldest,),
         ).fetchall()
+
+
+def mark_exit_alerted(signal_id):
+    """Mark signal as having received an exit alert (prevents re-sending)."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE signals SET exit_alerted = 1, exit_alerted_at = ? WHERE id = ?",
+            (utcnow_iso(), signal_id),
+        )
+        conn.commit()
 
 
 def get_all_active_signals():

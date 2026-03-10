@@ -77,6 +77,18 @@ def get_display_timezone() -> str:
     return _get("display_timezone", config.DISPLAY_TIMEZONE, str)
 
 
+def get_runner_exit_drawdown_pct() -> float:
+    return _get("runner_exit_drawdown_pct", config.RUNNER_EXIT_DRAWDOWN_PCT, float)
+
+
+def get_runner_exit_liq_drain_pct() -> float:
+    return _get("runner_exit_liq_drain_pct", config.RUNNER_EXIT_LIQ_DRAIN_PCT, float)
+
+
+def get_runner_dedup_window() -> int:
+    return _get("runner_dedup_window", config.RUNNER_DEDUP_WINDOW, int)
+
+
 def get_source_groups() -> list:
     """Source groups can't be changed at runtime — requires bot restart to re-resolve entities."""
     return config.SOURCE_GROUPS

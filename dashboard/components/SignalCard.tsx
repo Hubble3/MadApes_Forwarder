@@ -19,6 +19,20 @@ const statusConfig: Record<string, { bg: string; text: string; label: string }> 
   loss: { bg: 'bg-red-500/15', text: 'text-red-400', label: 'LOSS' },
 };
 
+const tierConfig: Record<string, { bg: string; text: string; label: string; icon: string }> = {
+  gold: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: 'GOLD', icon: '\u{1F947}' },
+  silver: { bg: 'bg-slate-400/20', text: 'text-slate-300', label: 'SILVER', icon: '\u{1F948}' },
+  bronze: { bg: 'bg-orange-700/20', text: 'text-orange-500', label: 'BRONZE', icon: '\u{1F949}' },
+};
+
+const momentumConfig: Record<string, { bg: string; text: string; label: string }> = {
+  early_runner: { bg: 'bg-emerald-500/20', text: 'text-emerald-400', label: 'EARLY RUNNER' },
+  confirmed: { bg: 'bg-green-500/20', text: 'text-green-400', label: 'CONFIRMED' },
+  holding: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: 'HOLDING' },
+  fading: { bg: 'bg-orange-500/20', text: 'text-orange-400', label: 'FADING' },
+  dumped: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'DUMPED' },
+};
+
 interface SignalCardProps {
   signal: Signal;
   livePrice?: LivePrice;
@@ -31,6 +45,10 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
   // Use live data if available, otherwise fall back to DB stored values
   const currentPrice = livePrice?.price ?? signal.current_price;
   const currentMC = livePrice?.market_cap ?? signal.current_market_cap;
+
+  // Peak = max of stored peak vs live price (live may exceed stored peak between DB updates)
+  const peakPrice = Math.max(signal.max_price_seen ?? 0, currentPrice ?? 0) || null;
+  const peakMC = Math.max(signal.max_market_cap_seen ?? 0, currentMC ?? 0) || null;
 
   // Calculate P&L from live data
   let pnl = signal.price_change_percent;
@@ -85,6 +103,14 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
                 : 'Unknown'
             )}
           </span>
+          {signal.signal_tier && tierConfig[signal.signal_tier] && (
+            <span className={clsx('px-1.5 py-0.5 rounded-md text-[10px] font-bold border', tierConfig[signal.signal_tier].bg, tierConfig[signal.signal_tier].text,
+              signal.signal_tier === 'gold' ? 'border-yellow-500/30' : 'border-transparent'
+            )}>
+              {tierConfig[signal.signal_tier].icon} {tierConfig[signal.signal_tier].label}
+              {signal.runner_potential_score ? ` ${Math.round(signal.runner_potential_score)}` : ''}
+            </span>
+          )}
           {signal.runner_alerted === 1 && (
             <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/20 animate-pulse">
               RUNNER
@@ -102,10 +128,14 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
       </div>
 
       {/* Price & MC grid */}
-      <div className="grid grid-cols-4 gap-2 mb-3">
+      <div className="grid grid-cols-3 gap-2 mb-2">
         <div>
           <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-0.5">Entry</p>
           <p className="text-xs text-slate-300 font-mono">{formatPrice(signal.original_price)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-amber-600 uppercase tracking-wider mb-0.5">Peak</p>
+          <p className="text-xs text-amber-400 font-mono">{formatPrice(peakPrice)}</p>
         </div>
         <div>
           <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-0.5">Now</p>
@@ -113,9 +143,15 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
             {formatPrice(currentPrice)}
           </p>
         </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mb-3">
         <div>
           <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-0.5">Entry MC</p>
           <p className="text-xs text-slate-300 font-mono">{formatCurrency(signal.original_market_cap)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-amber-600 uppercase tracking-wider mb-0.5">Peak MC</p>
+          <p className="text-xs text-amber-400 font-mono">{formatCurrency(peakMC)}</p>
         </div>
         <div>
           <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-0.5">Live MC</p>
@@ -149,6 +185,22 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
             >
               Telegram
             </a>
+          )}
+        </div>
+      )}
+
+      {/* Momentum badges */}
+      {(signal.momentum_check_5m || signal.momentum_check_15m) && (
+        <div className="flex items-center gap-1.5 mb-2">
+          {signal.momentum_check_5m && momentumConfig[signal.momentum_check_5m] && (
+            <span className={clsx('px-1.5 py-0.5 rounded text-[9px] font-bold', momentumConfig[signal.momentum_check_5m].bg, momentumConfig[signal.momentum_check_5m].text)}>
+              5m: {momentumConfig[signal.momentum_check_5m].label}
+            </span>
+          )}
+          {signal.momentum_check_15m && momentumConfig[signal.momentum_check_15m] && (
+            <span className={clsx('px-1.5 py-0.5 rounded text-[9px] font-bold', momentumConfig[signal.momentum_check_15m].bg, momentumConfig[signal.momentum_check_15m].text)}>
+              15m: {momentumConfig[signal.momentum_check_15m].label}
+            </span>
           )}
         </div>
       )}

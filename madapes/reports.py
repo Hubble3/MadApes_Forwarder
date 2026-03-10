@@ -22,6 +22,7 @@ from madapes.formatting import (
     token_display_label,
 )
 from madapes.message_builder import resolve_report_links
+from madapes.services.enrichment_service import enrich_token
 from madapes.services.leaderboard_service import get_caller_leaderboard, get_performance_attribution
 from madapes.services.performance_service import check_signal_price, run_1h_checks, run_6h_checks
 from madapes.services.portfolio_service import get_portfolio_summary
@@ -87,6 +88,18 @@ async def send_performance_update_to_report(signal_row, check_result, time_label
         sections.append(f"{status_emoji}: {price_change:+.2f}% ({multiplier:.2f}x)")
         sections.append("")
         sections.append(f"\U0001f4b5 Original: {format_price(original_price)}")
+
+        max_price = safe_float(signal_row["max_price_seen"])
+        max_mc = safe_float(signal_row["max_market_cap_seen"])
+        if max_price:
+            peak_mult = max_price / original_price if original_price and original_price > 0 else 0
+            peak_pnl = ((max_price - original_price) / original_price * 100) if original_price and original_price > 0 else 0
+            peak_line = f"\U0001f31f Peak:     {format_price(max_price)}"
+            if max_mc:
+                peak_line += f" | MC {format_currency(max_mc)}"
+            peak_line += f" | {peak_pnl:+.1f}% ({peak_mult:.2f}x)"
+            sections.append(peak_line)
+
         sections.append(f"\U0001f4b5 Current: {format_price(current_price)}")
         sections.append("")
 
@@ -242,10 +255,21 @@ async def generate_daily_report():
                 else:
                     report_lines.append(line_checkpoint("6h", price_6h, mc_6h, chg_6h, mult_6h))
 
+                max_p = safe_float(row["max_price_seen"])
+                max_mc = safe_float(row["max_market_cap_seen"])
+                if max_p and called_price and called_price > 0:
+                    peak_pnl = ((max_p - called_price) / called_price) * 100
+                    peak_mult = max_p / called_price
+                    peak_line = f"   \U0001f31f Peak:  Price {format_price(max_p)}"
+                    if max_mc:
+                        peak_line += f" | MC {format_currency(max_mc)}"
+                    peak_line += f" | {peak_pnl:+.2f}% ({peak_mult:.2f}x)"
+                    report_lines.append(peak_line)
+
                 # Live fetch
                 live_line = "   Live:   N/A"
                 try:
-                    live = await fetch_dexscreener_data(chain, addr)
+                    live = await enrich_token(chain, addr)
                     live_price = safe_float(live.get("price")) if live else None
                     live_mc = safe_float(live.get("fdv")) if live else None
                     if live_price is not None and live_mc is not None and called_price and called_price > 0:
@@ -425,6 +449,8 @@ async def send_new_day_to_destinations():
         dests = [ctx.destination_entity_under_80k, ctx.destination_entity_80k_or_more]
         if ctx.report_destination_entity is not None:
             dests.append(ctx.report_destination_entity)
+        if ctx.destination_entity_gold is not None:
+            dests.append(ctx.destination_entity_gold)
         for dest in dests:
             if dest is None:
                 continue
@@ -438,6 +464,92 @@ async def send_new_day_to_destinations():
             ctx.last_new_day_date = maryland_now.date()
     except Exception as e:
         logger.error(f"Error sending NEW DAY: {e}")
+
+
+async def generate_gold_daily_summary():
+    """Generate a brief daily summary of GOLD-tier signals for the GOLD channel."""
+    try:
+        ctx = app_context
+        if not ctx.destination_entity_gold:
+            return
+
+        from db import get_connection
+        with get_connection() as conn:
+            rows = conn.execute(
+                """SELECT * FROM signals
+                   WHERE signal_tier = 'gold'
+                     AND date(original_timestamp) = date('now')
+                   ORDER BY runner_potential_score DESC""",
+            ).fetchall()
+
+        if not rows:
+            return
+
+        maryland_now = datetime.now(ctx.display_tz)
+        report_date = maryland_now.strftime("%B %d, %Y")
+
+        lines = []
+        lines.append("\u2501" * 32)
+        lines.append(f"\U0001f947 <b>GOLD SIGNALS TODAY \u2014 {report_date}</b>")
+        lines.append("")
+
+        winners = [r for r in rows if r["status"] == "win"]
+        losers = [r for r in rows if r["status"] == "loss"]
+        active = [r for r in rows if r["status"] == "active"]
+        total = len(rows)
+        wr = (len(winners) / (len(winners) + len(losers)) * 100) if (len(winners) + len(losers)) > 0 else 0
+
+        lines.append(
+            f"Total: {total} | \U0001f7e2 {len(winners)} wins | \U0001f534 {len(losers)} losses | "
+            f"\u26aa {len(active)} active | WR: {wr:.0f}%"
+        )
+        lines.append("")
+
+        for i, row in enumerate(rows, 1):
+            emoji = CHAIN_EMOJI_MAP.get((row["chain"] or "").lower(), "\U0001f48e")
+            label = token_display_label(row["token_name"], row["token_symbol"])
+            score = row["runner_potential_score"] or 0
+            addr = str(row["token_address"] or "")
+
+            status_emoji = "\U0001f7e2" if row["status"] == "win" else "\U0001f534" if row["status"] == "loss" else "\u26aa"
+            pnl = safe_float(row["price_change_percent"])
+            pnl_str = f" {pnl:+.1f}%" if pnl is not None else ""
+            mult = safe_float(row["multiplier"])
+            mult_str = f" ({mult:.2f}x)" if mult is not None else ""
+
+            lines.append(f"{i}) {emoji} {label} \u2014 Score: {score:.0f}")
+            lines.append(f"   {status_emoji}{pnl_str}{mult_str}")
+
+            max_p = safe_float(row["max_price_seen"])
+            max_mc = safe_float(row["max_market_cap_seen"])
+            if max_p:
+                orig_p = safe_float(row["original_price"])
+                if orig_p and orig_p > 0:
+                    peak_pnl = ((max_p - orig_p) / orig_p) * 100
+                    peak_str = f"   \U0001f31f Peak: {format_price(max_p)} ({peak_pnl:+.1f}%)"
+                    if max_mc:
+                        peak_str += f" | MC {format_currency(max_mc)}"
+                    lines.append(peak_str)
+
+            lines.append(f"   <code>{html.escape(addr)}</code>")
+
+            ds_link, _ = resolve_report_links(
+                row, addr, (row["chain"] or "").lower(),
+                ctx.destination_entity_under_80k, ctx.destination_entity_80k_or_more,
+            )
+            if ds_link:
+                lines.append(f'   \U0001f4ca <a href="{html.escape(ds_link)}">DexScreener</a>')
+            lines.append("")
+
+        lines.append("\u2501" * 32)
+        text = "\n".join(lines)
+
+        await ctx.client.send_message(
+            ctx.destination_entity_gold, text, parse_mode="html", link_preview=False,
+        )
+        logger.info(f"GOLD daily summary sent: {len(rows)} signals")
+    except Exception as e:
+        logger.error(f"GOLD daily summary failed: {e}")
 
 
 async def background_checker():
@@ -456,6 +568,7 @@ async def background_checker():
 
             if maryland_now.hour == 23 and maryland_now.minute >= 55 and ctx.last_daily_report_date != today:
                 await generate_daily_report()
+                await generate_gold_daily_summary()
                 ctx.last_daily_report_date = today
                 await asyncio.sleep(120)
 

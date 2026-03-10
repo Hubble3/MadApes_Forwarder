@@ -11,7 +11,8 @@ router = APIRouter()
 def _caller_to_dict(caller):
     if caller is None:
         return None
-    result = {
+    checked = (caller.win_count or 0) + (caller.loss_count or 0)
+    return {
         "sender_id": caller.sender_id,
         "sender_name": caller.sender_name,
         "total_signals": caller.total_signals,
@@ -23,10 +24,12 @@ def _caller_to_dict(caller):
         "worst_return": caller.worst_return,
         "composite_score": caller.composite_score,
         "last_signal_at": caller.last_signal_at,
+        "win_rate": round((caller.win_count / checked * 100) if checked > 0 else 0, 1),
+        "big_win_count": caller.big_win_count,
+        "runner_rate": caller.runner_rate,
+        "big_win_rate": caller.big_win_rate,
+        "best_chain": caller.best_chain,
     }
-    checked = (caller.win_count or 0) + (caller.loss_count or 0)
-    result["win_rate"] = round((caller.win_count / checked * 100) if checked > 0 else 0, 1)
-    return result
 
 
 @router.get("/")

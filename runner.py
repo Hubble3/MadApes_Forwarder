@@ -5,10 +5,14 @@ Multi-timeframe momentum detection with tiered alerts and exit signals.
 import asyncio
 import html
 import logging
+import time
 from datetime import datetime
 
-from madapes.runtime_settings import get_runner_velocity_min, get_runner_vol_accel_min, get_runner_poll_interval
-from db import get_signals_for_runner_check, get_runner_exit_candidates, mark_runner_alerted, update_max_tracking
+from madapes.runtime_settings import (
+    get_runner_velocity_min, get_runner_vol_accel_min, get_runner_poll_interval,
+    get_runner_exit_drawdown_pct, get_runner_exit_liq_drain_pct, get_runner_dedup_window,
+)
+from db import get_signals_for_runner_check, get_runner_exit_candidates, mark_runner_alerted, mark_exit_alerted, update_max_tracking
 from madapes.constants import CHAIN_EMOJI_MAP
 from madapes.event_bus import emit
 from madapes.events import RunnerDetected
@@ -120,15 +124,17 @@ def detect_exit_signal(signal_row, current_data):
     if not current_price or not max_price or max_price <= 0:
         return False, ""
 
-    # Drawdown from peak
+    # Drawdown from peak (configurable threshold)
     drawdown_pct = ((max_price - current_price) / max_price) * 100
-    if drawdown_pct >= 40:
+    exit_drawdown = get_runner_exit_drawdown_pct()
+    if drawdown_pct >= exit_drawdown:
         return True, f"Drawdown {drawdown_pct:.0f}% from peak"
 
-    # Liquidity drain: >50% liquidity removed
+    # Liquidity drain (configurable threshold)
+    exit_liq_drain = get_runner_exit_liq_drain_pct()
     if original_liquidity and original_liquidity > 0 and current_liquidity is not None:
         liq_change = ((current_liquidity - original_liquidity) / original_liquidity) * 100
-        if liq_change <= -50:
+        if liq_change <= -exit_liq_drain:
             return True, f"Liquidity drain {liq_change:.0f}%"
 
     # Volume collapse: 5m volume near zero when price was running
@@ -171,6 +177,9 @@ def build_runner_alert_message(signal_row, current_data, velocity, vol_accel, de
     tier = (details or {}).get("tier", "runner")
     header = TIER_LABELS.get(tier, TIER_LABELS["runner"])
 
+    max_price = safe_float(signal_row["max_price_seen"])
+    max_mc = safe_float(signal_row["max_market_cap_seen"])
+
     lines = [
         "\u2501" * 32,
         header,
@@ -179,11 +188,18 @@ def build_runner_alert_message(signal_row, current_data, velocity, vol_accel, de
         f"\U0001f4cd CA (tap to copy): <code>{html.escape(str(token_address))}</code>",
         "",
         f"Entry: {called_time} | {format_price(original_price)} | MC {format_currency(original_market_cap)}",
+    ]
+    if max_price and max_price > original_price:
+        peak_line = f"\U0001f31f Peak:  {format_price(max_price)}"
+        if max_mc:
+            peak_line += f" | MC {format_currency(max_mc)}"
+        lines.append(peak_line)
+    lines.extend([
         f"Now:   {format_price(current_price)} | MC {format_currency(current_market_cap)}",
         "",
         f"\U0001f4c8 {price_change_pct:+.1f}% | {velocity:.2f}%/min velocity",
         f"\U0001f4b9 Vol 5m: {vol_accel:.1f}\u00d7 24h rate",
-    ]
+    ])
 
     # Extra details for strong/moonshot
     if details:
@@ -247,8 +263,45 @@ async def runner_watcher(client, report_destination_entity):
     """Main loop: poll for runner candidates every poll_interval seconds."""
 
     logger.info("Runner watcher started")
+
+    # Dedup: track recently alerted tokens by address → {tier: timestamp}
+    _recent_alerts: dict[str, dict[str, float]] = {}
+
+    def _is_duplicate(token_address: str, tier: str) -> bool:
+        """Check if this token+tier was already alerted within the dedup window."""
+        window = get_runner_dedup_window()
+        now = time.monotonic()
+        entry = _recent_alerts.get(token_address)
+        if entry and tier in entry:
+            if now - entry[tier] < window:
+                return True
+        return False
+
+    def _mark_alerted(token_address: str, tier: str):
+        """Record that we alerted this token+tier."""
+        now = time.monotonic()
+        if token_address not in _recent_alerts:
+            _recent_alerts[token_address] = {}
+        _recent_alerts[token_address][tier] = now
+
+    def _cleanup_dedup():
+        """Remove expired dedup entries."""
+        window = get_runner_dedup_window()
+        now = time.monotonic()
+        expired = []
+        for addr, tiers in _recent_alerts.items():
+            tiers_to_remove = [t for t, ts in tiers.items() if now - ts >= window]
+            for t in tiers_to_remove:
+                del tiers[t]
+            if not tiers:
+                expired.append(addr)
+        for addr in expired:
+            del _recent_alerts[addr]
+
     while True:
         try:
+            _cleanup_dedup()
+
             signals = get_signals_for_runner_check()
             if signals:
                 logger.debug(f"Runner check: {len(signals)} signal(s) in window")
@@ -270,6 +323,14 @@ async def runner_watcher(client, report_destination_entity):
                     update_max_tracking(signal_id, current_price, current_mc)
 
                     if is_runner:
+                        tier = details.get("tier", "runner")
+
+                        # Dedup: skip if same token+tier already alerted recently
+                        if _is_duplicate(token_address, tier):
+                            logger.debug(f"Dedup: skipping {tier} alert for {token_address[:8]}... (already sent)")
+                            mark_runner_alerted(signal_id)
+                            continue
+
                         price_change_pct = details.get("price_change_pct", 0.0)
                         await emit(RunnerDetected(
                             signal_id=signal_id,
@@ -291,16 +352,30 @@ async def runner_watcher(client, report_destination_entity):
                                 parse_mode="html", link_preview=False,
                             )
                             mark_runner_alerted(signal_id)
-                            tier = details.get("tier", "runner")
+                            _mark_alerted(token_address, tier)
                             logger.info(f"{tier.upper()} alert sent for signal {signal_id} ({token_address[:8]}...)")
+
+                            # Also send runner alerts for GOLD-tier signals to the GOLD channel
+                            from madapes.context import app_context as _ctx
+                            signal_tier = signal_row["signal_tier"] if "signal_tier" in signal_row.keys() else None
+                            if signal_tier == "gold" and _ctx.destination_entity_gold:
+                                try:
+                                    gold_msg = "\U0001f947 <b>GOLD RUNNER ALERT</b>\n\n" + msg
+                                    await client.send_message(
+                                        _ctx.destination_entity_gold, gold_msg,
+                                        parse_mode="html", link_preview=False,
+                                    )
+                                except Exception:
+                                    pass
 
                 except Exception as e:
                     logger.error(f"Runner check failed for signal {signal_id}: {e}")
 
                 await asyncio.sleep(1.5)
 
-            # Exit signal detection for previously alerted runners (separate query)
+            # Exit signal detection — batched into a single summary message
             exit_candidates = get_runner_exit_candidates()
+            exit_entries = []
             for signal_row in exit_candidates:
                 signal_id = signal_row["id"]
                 try:
@@ -313,17 +388,30 @@ async def runner_watcher(client, report_destination_entity):
                     update_max_tracking(signal_id, current_price, current_mc)
 
                     should_exit, exit_reason = detect_exit_signal(signal_row, current_data)
-                    if should_exit and report_destination_entity:
-                        msg = build_exit_alert_message(signal_row, current_data, exit_reason)
-                        await client.send_message(
-                            report_destination_entity, msg,
-                            parse_mode="html", link_preview=False,
-                        )
+                    if should_exit:
+                        chain_emoji = CHAIN_EMOJI_MAP.get((signal_row["chain"] or "").lower(), "\U0001f48e")
+                        label = token_display_label(signal_row["token_name"], signal_row["token_symbol"])
+                        exit_entries.append(f"{chain_emoji} {label} \u2014 {exit_reason}")
+                        mark_exit_alerted(signal_id)
                         logger.info(f"Exit signal for {signal_id}: {exit_reason}")
                 except Exception as e:
                     logger.error(f"Exit signal check failed for signal {signal_id}: {e}")
 
                 await asyncio.sleep(1.5)
+
+            # Send consolidated exit summary
+            if exit_entries and report_destination_entity:
+                lines = ["\u2501" * 32, "\U0001f6a8 <b>EXIT SIGNALS</b>", ""]
+                for entry in exit_entries:
+                    lines.append(f"\u2022 {entry}")
+                lines.append("", "\u2501" * 32)
+                try:
+                    await client.send_message(
+                        report_destination_entity, "\n".join(lines),
+                        parse_mode="html", link_preview=False,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send exit summary: {e}")
 
         except Exception as e:
             logger.error(f"Runner watcher error: {e}")

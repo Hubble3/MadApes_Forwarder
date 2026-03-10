@@ -69,6 +69,9 @@ class SignalForwarded:
     destination_type: str
     forwarded_message_id: Optional[int] = None
     market_cap: Optional[float] = None
+    signal_tier: Optional[str] = None
+    token_name: str = ""
+    token_symbol: str = ""
 
     def to_dict(self) -> dict:
         d = asdict(self)

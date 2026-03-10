@@ -42,6 +42,15 @@ export interface Signal {
   tags: string | null;
   original_dexscreener_link: string | null;
   signal_link: string | null;
+  runner_potential_score: number | null;
+  signal_tier: string | null;
+  message_quality_score: number | null;
+  momentum_check_5m: string | null;
+  momentum_check_15m: string | null;
+  max_price_seen: number | null;
+  max_price_seen_at: string | null;
+  max_market_cap_seen: number | null;
+  max_market_cap_seen_at: string | null;
 }
 
 export interface LivePrice {
@@ -67,6 +76,10 @@ export interface Caller {
   composite_score: number;
   last_signal_at: string | null;
   win_rate?: number;
+  big_win_count?: number;
+  runner_rate?: number;
+  big_win_rate?: number;
+  best_chain?: string | null;
 }
 
 export interface PortfolioSummary {
@@ -116,11 +129,14 @@ export const api = {
   botStatus: () => fetchApi<{ online: boolean; seconds_ago: number | null; ws_clients: number; info: any }>('/api/bot-status'),
 
   signals: {
-    list: (params?: { status?: string; chain?: string; search?: string; limit?: number; offset?: number }) => {
+    list: (params?: { status?: string; chain?: string; search?: string; tier?: string; sort?: string; order?: string; limit?: number; offset?: number }) => {
       const qs = new URLSearchParams();
       if (params?.status) qs.set('status', params.status);
       if (params?.chain) qs.set('chain', params.chain);
       if (params?.search) qs.set('search', params.search);
+      if (params?.tier) qs.set('tier', params.tier);
+      if (params?.sort) qs.set('sort', params.sort);
+      if (params?.order) qs.set('order', params.order);
       if (params?.limit) qs.set('limit', String(params.limit));
       if (params?.offset) qs.set('offset', String(params.offset));
       return fetchApi<{ signals: Signal[]; total: number }>(`/api/signals/?${qs}`);
@@ -179,6 +195,10 @@ export const api = {
     exportCallers: () => fetchApi<any>('/api/settings/export/callers'),
     deleteSignal: (signal_id: number) =>
       fetchApi<any>(`/api/settings/signals/${signal_id}`, { method: 'DELETE' }),
+  },
+
+  insights: {
+    get: () => fetchApi<any>('/api/insights/'),
   },
 
   strategies: {

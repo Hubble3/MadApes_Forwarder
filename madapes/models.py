@@ -74,6 +74,10 @@ class Caller:
     worst_return: float = 0.0
     composite_score: float = 0.0  # 0-100
     last_signal_at: Optional[str] = None
+    big_win_count: int = 0
+    runner_rate: float = 0.0
+    big_win_rate: float = 0.0
+    best_chain: Optional[str] = None
 
 
 @dataclass

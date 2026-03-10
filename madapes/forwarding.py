@@ -20,7 +20,7 @@ from madapes.constants import DS_CHAINS
 from madapes.context import app_context
 from madapes.detection import detect_contract_addresses, extract_trading_info
 from madapes.event_bus import emit
-from madapes.events import SignalDetected, SignalEnriched, SignalForwarded
+from madapes.events import SignalForwarded
 from madapes.message_builder import (
     build_dexscreener_links,
     build_info_message,
@@ -33,6 +33,8 @@ from madapes.services.enrichment_service import enrich_token
 from madapes.services.onchain_service import check_token_safety, safety_summary
 from madapes.services.portfolio_service import open_position
 from madapes.services.scoring_service import compute_signal_confidence, confidence_badge
+from madapes.services.strategy_engine import compute_runner_potential, tier_badge
+from madapes.services.message_analyzer import analyze_message
 from madapes.services.tagging_service import compute_tags, tags_display
 
 logger = logging.getLogger(__name__)
@@ -199,12 +201,34 @@ async def forward_message(message, chat, sender):
             chain=chain,
         )
 
+        # Message quality analysis
+        msg_analysis = analyze_message(message_text)
+
+        # Strategy engine: runner potential scoring
+        has_plain_contract = bool(contract_addresses) and any(
+            addr not in (message_text.replace(addr, "") if addr in message_text else "")
+            for _, addr in contract_addresses[:1]
+        )
+        runner_eval = compute_runner_potential(
+            market_cap=market_cap,
+            liquidity=liquidity,
+            volume_24h=volume_24h,
+            pair_created_at=pair_created_at,
+            chain=chain,
+            sender_id=sender_id,
+            message_text=message_text,
+            has_plain_contract=has_plain_contract,
+        )
+        runner_potential = runner_eval["runner_potential"]
+        signal_tier = runner_eval["tier"]
+
         # On-chain safety check
         safety_result = await check_token_safety(chain, address)
         safety_text = safety_summary(safety_result) if safety_result else ""
 
         caller_badge = get_caller_badge(sender_id) if sender_id else ""
         conf_badge = confidence_badge(confidence_score)
+        strategy_badge = tier_badge(signal_tier, runner_potential)
         tags_text = tags_display(signal_tags)
 
         # Build info message
@@ -230,6 +254,7 @@ async def forward_message(message, chat, sender):
             message_link, None,
             caller_badge=caller_badge,
             confidence_badge=conf_badge,
+            strategy_badge=strategy_badge,
             tags_text=tags_text,
             multi_caller_count=multi_caller_count,
             safety_text=safety_text,
@@ -326,11 +351,51 @@ async def forward_message(message, chat, sender):
                     destination_type=destination_type,
                 )
 
+        # Store strategy engine results in DB
+        try:
+            from db import get_connection as _gc
+            with _gc() as conn:
+                conn.execute(
+                    """UPDATE signals SET
+                        runner_potential_score = ?, signal_tier = ?,
+                        message_quality_score = ?, confidence_score = ?,
+                        tags = ?
+                    WHERE id = ?""",
+                    (runner_potential, signal_tier,
+                     msg_analysis["quality_score"], confidence_score,
+                     ",".join(signal_tags) if signal_tags else None,
+                     claim_id),
+                )
+                conn.commit()
+        except Exception as e:
+            logger.debug(f"Failed to store strategy data for signal {claim_id}: {e}")
+
+        # GOLD tier: also send to premium channel
+        if signal_tier == "gold" and ctx.destination_entity_gold:
+            try:
+                gold_header = (
+                    "\U0001f947\U0001f947\U0001f947 <b>GOLD SIGNAL</b> \U0001f947\U0001f947\U0001f947\n\n"
+                )
+                gold_text = gold_header + info_text
+                await ctx.client.send_message(
+                    ctx.destination_entity_gold, gold_text,
+                    parse_mode="html", link_preview=False,
+                )
+                logger.info(f"GOLD signal {claim_id} sent to premium channel")
+            except Exception as e:
+                logger.error(f"Failed to send GOLD signal {claim_id} to premium channel: {e}")
+
         # Emit SignalForwarded event
         fwd_market_cap = None
         if dexscreener_data:
             first_d = list(dexscreener_data.values())[0]
             fwd_market_cap = float(first_d["fdv"]) if first_d.get("fdv") else None
+        fwd_token_name = ""
+        fwd_token_symbol = ""
+        if dexscreener_data:
+            first_d = list(dexscreener_data.values())[0]
+            fwd_token_name = first_d.get("token_name", "")
+            fwd_token_symbol = first_d.get("token_symbol", "")
         await emit(SignalForwarded(
             signal_id=claim_id,
             token_address=contract_addresses[0][1],
@@ -338,6 +403,9 @@ async def forward_message(message, chat, sender):
             destination_type=destination_type,
             forwarded_message_id=(info_ids[0] if info_ids else (copied_ids[0] if copied_ids else None)),
             market_cap=fwd_market_cap,
+            signal_tier=signal_tier,
+            token_name=fwd_token_name,
+            token_symbol=fwd_token_symbol,
         ))
 
         # Open virtual portfolio position

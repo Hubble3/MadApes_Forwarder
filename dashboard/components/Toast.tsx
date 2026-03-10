@@ -4,7 +4,7 @@ import clsx from 'clsx';
 
 export interface ToastMessage {
   id: string;
-  type: 'signal' | 'runner' | 'info';
+  type: 'signal' | 'runner' | 'info' | 'gold';
   title: string;
   body: string;
   timestamp: number;
@@ -19,6 +19,7 @@ export function showToast(toast: Omit<ToastMessage, 'id' | 'timestamp'>) {
 const typeConfig = {
   signal: { icon: 'S', bg: 'border-blue-500/30 bg-blue-500/5', accent: 'text-blue-400', dot: 'bg-blue-400' },
   runner: { icon: 'R', bg: 'border-orange-500/30 bg-orange-500/5', accent: 'text-orange-400', dot: 'bg-orange-400' },
+  gold: { icon: 'G', bg: 'border-yellow-500/30 bg-yellow-500/5', accent: 'text-yellow-400', dot: 'bg-yellow-400' },
   info: { icon: 'i', bg: 'border-slate-500/30 bg-slate-500/5', accent: 'text-slate-400', dot: 'bg-slate-400' },
 };
 

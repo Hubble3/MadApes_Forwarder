@@ -10,6 +10,7 @@ class AppContext:
     client: Any = None
     destination_entity_under_80k: Any = None
     destination_entity_80k_or_more: Any = None
+    destination_entity_gold: Any = None
     report_destination_entity: Any = None
     source_channels: Set[int] = field(default_factory=set)
     display_tz: Any = None

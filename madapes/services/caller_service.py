@@ -20,7 +20,7 @@ RECENCY_HALF_LIFE_DAYS = 14
 
 
 def _ensure_callers_table():
-    """Create callers table if it doesn't exist."""
+    """Create callers table if it doesn't exist, and run migrations."""
     with get_connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS callers (
@@ -38,6 +38,17 @@ def _ensure_callers_table():
                 updated_at TEXT
             )
         """)
+        # Enhanced caller metrics migration
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(callers)").fetchall()}
+        for col, col_type in [
+            ("big_win_count", "INTEGER DEFAULT 0"),
+            ("runner_rate", "REAL DEFAULT 0.0"),
+            ("big_win_rate", "REAL DEFAULT 0.0"),
+            ("best_chain", "TEXT"),
+            ("avg_time_to_peak_min", "REAL"),
+        ]:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE callers ADD COLUMN {col} {col_type}")
         conn.commit()
 
 
@@ -50,6 +61,7 @@ def get_caller(sender_id: int) -> Optional[Caller]:
         ).fetchone()
         if row is None:
             return None
+        cols = row.keys()
         return Caller(
             sender_id=row["sender_id"],
             sender_name=row["sender_name"] or "",
@@ -62,6 +74,10 @@ def get_caller(sender_id: int) -> Optional[Caller]:
             worst_return=row["worst_return"],
             composite_score=row["composite_score"],
             last_signal_at=row["last_signal_at"],
+            big_win_count=row["big_win_count"] if "big_win_count" in cols else 0,
+            runner_rate=row["runner_rate"] if "runner_rate" in cols else 0.0,
+            big_win_rate=row["big_win_rate"] if "big_win_rate" in cols else 0.0,
+            best_chain=row["best_chain"] if "best_chain" in cols else None,
         )
 
 
@@ -73,6 +89,7 @@ def get_all_callers(min_signals: int = 1) -> List[Caller]:
             "SELECT * FROM callers WHERE total_signals >= ? ORDER BY composite_score DESC",
             (min_signals,),
         ).fetchall()
+        cols = rows[0].keys() if rows else []
         return [
             Caller(
                 sender_id=r["sender_id"],
@@ -86,6 +103,10 @@ def get_all_callers(min_signals: int = 1) -> List[Caller]:
                 worst_return=r["worst_return"],
                 composite_score=r["composite_score"],
                 last_signal_at=r["last_signal_at"],
+                big_win_count=r["big_win_count"] if "big_win_count" in cols else 0,
+                runner_rate=r["runner_rate"] if "runner_rate" in cols else 0.0,
+                big_win_rate=r["big_win_rate"] if "big_win_rate" in cols else 0.0,
+                best_chain=r["best_chain"] if "best_chain" in cols else None,
             )
             for r in rows
         ]
@@ -215,17 +236,41 @@ def update_caller_stats(sender_id: int, sender_name: str = ""):
 
         last_signal_at = rows[0]["original_timestamp"] if rows else None
 
+        # Enhanced metrics: big wins (multiplier >= 5x), runner rate, best chain
+        big_win_count = 0
+        chain_runners = {}
+        try:
+            big_row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM signals WHERE sender_id = ? AND runner_alerted = 1 AND multiplier >= 5",
+                (sender_id,),
+            ).fetchone()
+            big_win_count = big_row["cnt"] if big_row else 0
+
+            chain_rows = conn.execute(
+                "SELECT chain, COUNT(*) AS cnt FROM signals WHERE sender_id = ? AND status = 'win' GROUP BY chain ORDER BY cnt DESC",
+                (sender_id,),
+            ).fetchall()
+            chain_runners = {r["chain"]: r["cnt"] for r in chain_rows} if chain_rows else {}
+        except Exception:
+            pass
+
+        runner_rate_val = (runner_count / checked_total * 100) if checked_total > 0 else 0.0
+        big_win_rate_val = (big_win_count / checked_total * 100) if checked_total > 0 else 0.0
+        best_chain = max(chain_runners, key=chain_runners.get) if chain_runners else None
+
         conn.execute(
             """INSERT OR REPLACE INTO callers
                (sender_id, sender_name, total_signals, win_count, loss_count, runner_count,
-                avg_return, best_return, worst_return, composite_score, last_signal_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                avg_return, best_return, worst_return, composite_score, last_signal_at, updated_at,
+                big_win_count, runner_rate, big_win_rate, best_chain)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (sender_id, sender_name or "", total, win_count, loss_count, runner_count,
              round(avg_return, 2), round(best_return, 2), round(worst_return, 2),
-             score, last_signal_at, utcnow_iso()),
+             score, last_signal_at, utcnow_iso(),
+             big_win_count, round(runner_rate_val, 2), round(big_win_rate_val, 2), best_chain),
         )
         conn.commit()
-        logger.debug(f"Caller {sender_id} updated: score={score}, win_rate={win_rate:.0%}, avg_return={avg_return:.1f}%")
+        logger.debug(f"Caller {sender_id} updated: score={score}, win_rate={win_rate:.0%}, runner_rate={runner_rate_val:.1f}%, avg_return={avg_return:.1f}%")
 
 
 def get_caller_badge(sender_id: int) -> str:
