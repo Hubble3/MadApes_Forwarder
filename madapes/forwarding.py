@@ -236,6 +236,16 @@ async def forward_message(message, chat, sender):
         safety_result = await check_token_safety(chain, address)
         safety_text = safety_summary(safety_result) if safety_result else ""
 
+        # Block honeypots — don't forward known scams
+        if safety_result and safety_result.get("is_honeypot"):
+            logger.warning(f"Blocking signal {claim_id}: HONEYPOT detected for {address[:12]}...")
+            delete_claim(claim_id)
+            return False
+
+        # Warn on very low safety score but still forward (with warning in message)
+        if safety_result and safety_result.get("safety_score") is not None and safety_result["safety_score"] < 30:
+            safety_text = "\u26a0\ufe0f <b>HIGH RISK</b> " + safety_text
+
         caller_badge = get_caller_badge(sender_id) if sender_id else ""
         conf_badge = confidence_badge(confidence_score)
         strategy_badge = tier_badge(signal_tier, runner_potential)
@@ -361,7 +371,8 @@ async def forward_message(message, chat, sender):
                     destination_type=destination_type,
                 )
 
-        # Store strategy engine results in DB
+        # Store strategy engine results + safety score in DB
+        safety_score_val = safety_result.get("safety_score") if safety_result else None
         try:
             from db import get_connection as _gc
             with _gc() as conn:
@@ -369,11 +380,12 @@ async def forward_message(message, chat, sender):
                     """UPDATE signals SET
                         runner_potential_score = ?, signal_tier = ?,
                         message_quality_score = ?, confidence_score = ?,
-                        tags = ?
+                        tags = ?, safety_score = ?
                     WHERE id = ?""",
                     (runner_potential, signal_tier,
                      msg_analysis["quality_score"], confidence_score,
                      ",".join(signal_tags) if signal_tags else None,
+                     safety_score_val,
                      claim_id),
                 )
                 conn.commit()

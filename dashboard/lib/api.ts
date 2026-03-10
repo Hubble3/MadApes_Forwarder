@@ -39,6 +39,7 @@ export interface Signal {
   runner_alerted: number;
   destination_type: string | null;
   confidence_score: number | null;
+  safety_score: number | null;
   tags: string | null;
   original_dexscreener_link: string | null;
   signal_link: string | null;

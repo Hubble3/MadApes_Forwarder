@@ -127,6 +127,13 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
               {qualityConfig[signal.signal_quality].label}
             </span>
           )}
+          {signal.safety_score !== null && signal.safety_score !== undefined && signal.safety_score < 50 && (
+            <span className={clsx('px-1.5 py-0.5 rounded-md text-[10px] font-bold',
+              signal.safety_score < 30 ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'
+            )}>
+              {signal.safety_score < 30 ? 'DANGER' : 'RISKY'}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {livePrice && (
