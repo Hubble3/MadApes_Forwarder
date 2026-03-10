@@ -113,34 +113,65 @@ def detect_runner(signal_row, current_data):
 
 
 def detect_exit_signal(signal_row, current_data):
-    """Detect potential exit signals: velocity reversal, volume collapse, liquidity drain.
+    """Detect potential exit signals: trailing stop from ATH, velocity reversal,
+    volume collapse, liquidity drain.
+
+    Enhanced to catch the "missed gains" problem: tokens that hit 2x-4x ATH
+    then dump back to entry or below.
+
     Returns (should_exit: bool, reason: str).
     """
     max_price = safe_float(signal_row["max_price_seen"])
     current_price = safe_float(current_data.get("price"))
+    original_price = safe_float(signal_row["original_price"])
     original_liquidity = safe_float(signal_row["original_liquidity"])
     current_liquidity = safe_float(current_data.get("liquidity"))
 
     if not current_price or not max_price or max_price <= 0:
         return False, ""
 
-    # Drawdown from peak (configurable threshold)
-    drawdown_pct = ((max_price - current_price) / max_price) * 100
-    exit_drawdown = get_runner_exit_drawdown_pct()
-    if drawdown_pct >= exit_drawdown:
-        return True, f"Drawdown {drawdown_pct:.0f}% from peak"
+    # Drawdown from ATH
+    drawdown_from_ath = ((max_price - current_price) / max_price) * 100
 
-    # Liquidity drain (configurable threshold)
+    # Gain from entry (how much profit is left)
+    gain_from_entry = 0
+    if original_price and original_price > 0:
+        gain_from_entry = ((current_price - original_price) / original_price) * 100
+
+    # ATH gain (how high it went)
+    ath_gain = 0
+    if original_price and original_price > 0:
+        ath_gain = ((max_price - original_price) / original_price) * 100
+
+    # --- TRAILING STOP: tighter stops for tokens that pumped harder ---
+    # Token hit 3x+ (200%+) and dropped 50%+ from ATH → likely dump
+    if ath_gain >= 200 and drawdown_from_ath >= 50:
+        return True, f"Trailing stop: was +{ath_gain:.0f}% ATH, now -{drawdown_from_ath:.0f}% from peak (at {gain_from_entry:+.0f}% from entry)"
+
+    # Token hit 2x (100%+) and dropped 40%+ from ATH → momentum lost
+    if ath_gain >= 100 and drawdown_from_ath >= 40:
+        return True, f"Trailing stop: was +{ath_gain:.0f}% ATH, now -{drawdown_from_ath:.0f}% from peak (at {gain_from_entry:+.0f}% from entry)"
+
+    # Token hit +50% and dropped 35%+ from ATH → fading
+    if ath_gain >= 50 and drawdown_from_ath >= 35:
+        return True, f"Trailing stop: was +{ath_gain:.0f}% ATH, now -{drawdown_from_ath:.0f}% from peak (at {gain_from_entry:+.0f}% from entry)"
+
+    # --- GENERAL DRAWDOWN (configurable, for runners that never hit TP) ---
+    exit_drawdown = get_runner_exit_drawdown_pct()
+    if drawdown_from_ath >= exit_drawdown:
+        return True, f"Drawdown {drawdown_from_ath:.0f}% from peak"
+
+    # --- LIQUIDITY DRAIN ---
     exit_liq_drain = get_runner_exit_liq_drain_pct()
     if original_liquidity and original_liquidity > 0 and current_liquidity is not None:
         liq_change = ((current_liquidity - original_liquidity) / original_liquidity) * 100
         if liq_change <= -exit_liq_drain:
             return True, f"Liquidity drain {liq_change:.0f}%"
 
-    # Volume collapse: 5m volume near zero when price was running
+    # --- VOLUME COLLAPSE: 5m volume near zero when price was running ---
     price_change_5m = safe_float(current_data.get("price_change_5m"), 0.0)
     volume_5m = safe_float(current_data.get("volume_5m"), 0.0)
-    if drawdown_pct >= 15 and price_change_5m < -5 and volume_5m < 100:
+    if drawdown_from_ath >= 15 and price_change_5m < -5 and volume_5m < 100:
         return True, "Volume collapse + reversal"
 
     return False, ""
@@ -431,7 +462,7 @@ async def runner_watcher(client, report_destination_entity):
                     if should_exit:
                         chain_emoji = CHAIN_EMOJI_MAP.get((signal_row["chain"] or "").lower(), "\U0001f48e")
                         label = token_display_label(signal_row["token_name"], signal_row["token_symbol"])
-                        exit_entries.append(f"{chain_emoji} {label} \u2014 {exit_reason}")
+                        exit_entries.append((signal_row, f"{chain_emoji} {label} \u2014 {exit_reason}"))
                         mark_exit_alerted(signal_id)
                         logger.info(f"Exit signal for {signal_id}: {exit_reason}")
                 except Exception as e:
@@ -497,8 +528,8 @@ async def runner_watcher(client, report_destination_entity):
             # Send consolidated exit summary
             if exit_entries and report_destination_entity:
                 lines = ["\u2501" * 32, "\U0001f6a8 <b>EXIT SIGNALS</b>", ""]
-                for entry in exit_entries:
-                    lines.append(f"\u2022 {entry}")
+                for sig_row, entry_text in exit_entries:
+                    lines.append(f"\u2022 {entry_text}")
                 lines.append("")
                 lines.append("\u2501" * 32)
                 try:
@@ -508,6 +539,34 @@ async def runner_watcher(client, report_destination_entity):
                     )
                 except Exception as e:
                     logger.error(f"Failed to send exit summary: {e}")
+
+                # Also send exit alerts to signal destination channels
+                from madapes.context import app_context as _ctx2
+                for sig_row, entry_text in exit_entries:
+                    dest_type = sig_row.get("destination_type") or ""
+                    dest_entity = None
+                    if "under" in dest_type.lower() or "small" in dest_type.lower():
+                        dest_entity = _ctx2.destination_entity_under_80k
+                    elif "over" in dest_type.lower() or "large" in dest_type.lower():
+                        dest_entity = _ctx2.destination_entity_80k_or_more
+                    if not dest_entity:
+                        dest_entity = _ctx2.destination_entity_under_80k
+
+                    chain_emoji = CHAIN_EMOJI_MAP.get((sig_row["chain"] or "").lower(), "\U0001f48e")
+                    label = token_display_label(sig_row["token_name"], sig_row["token_symbol"])
+                    ds_link = sig_row.get("original_dexscreener_link") or ""
+                    link_part = f'\n\U0001f4ca <a href="{html.escape(ds_link)}">DexScreener</a>' if ds_link else ""
+
+                    dest_msg = (
+                        f"\U0001f6a8 <b>EXIT SIGNAL</b>\n\n"
+                        f"\u2022 {entry_text}"
+                        f"\n\u27a1\ufe0f <i>Consider exiting or tightening stop-loss</i>"
+                        f"{link_part}"
+                    )
+                    try:
+                        await client.send_message(dest_entity, dest_msg, parse_mode="html", link_preview=False)
+                    except Exception as e:
+                        logger.error(f"Failed to send destination exit alert: {e}")
 
         except Exception as e:
             logger.error(f"Runner watcher error: {e}")
