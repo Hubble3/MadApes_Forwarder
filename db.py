@@ -375,8 +375,10 @@ def update_signal_after_forward(
                     original_price = ?, original_volume = ?, original_liquidity = ?, original_market_cap = ?,
                     original_dexscreener_link = ?, signal_link = ?, status = 'active',
                     original_dex_id = ?, destination_type = ?, hour_utc = ?, day_of_week = ?, session = ?,
-                    max_price_seen = COALESCE(max_price_seen, ?), max_price_seen_at = COALESCE(max_price_seen_at, ?),
-                    max_market_cap_seen = COALESCE(max_market_cap_seen, ?), max_market_cap_seen_at = COALESCE(max_market_cap_seen_at, ?)
+                    max_price_seen = MAX(COALESCE(max_price_seen, 0), COALESCE(?, 0)),
+                    max_price_seen_at = COALESCE(max_price_seen_at, ?),
+                    max_market_cap_seen = MAX(COALESCE(max_market_cap_seen, 0), COALESCE(?, 0)),
+                    max_market_cap_seen_at = COALESCE(max_market_cap_seen_at, ?)
                 WHERE id = ?
                 """,
                 (forwarded_message_id, enriched_chain, token_name, token_symbol,
