@@ -101,6 +101,7 @@ export default function SignalDetailPage() {
     { label: 'Source Group', value: s.source_group || 'N/A' },
     { label: 'Destination', value: s.destination_type || 'N/A' },
     { label: 'Detected At', value: formatTime(s.original_timestamp) },
+    { label: '15m Check', value: s.price_change_15m !== null && s.price_change_15m !== undefined ? `${s.price_change_15m >= 0 ? '+' : ''}${s.price_change_15m.toFixed(2)}% (${(s.multiplier_15m ?? 1).toFixed(2)}x)` : s.checked_15m ? 'No data' : 'Pending', color: s.price_change_15m !== null && s.price_change_15m !== undefined ? (s.price_change_15m > 0 ? 'text-emerald-400' : 'text-red-400') : undefined },
     { label: 'Runner Alert', value: s.runner_alerted ? 'Yes' : 'No', color: s.runner_alerted ? 'text-orange-400' : undefined },
     { label: 'Confidence', value: s.confidence_score !== null && s.confidence_score !== undefined ? `${s.confidence_score}/100` : 'N/A' },
     { label: 'Tags', value: s.tags || 'None' },

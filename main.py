@@ -17,7 +17,7 @@ from config import (
     MAX_SIGNALS, REPORT_DESTINATION, SESSION_NAME, DISPLAY_TIMEZONE,
     DESTINATION_GOLD,
 )
-from db import init_database
+from db import init_database, backfill_signal_quality, backfill_missing_intelligence
 from madapes.context import app_context
 from madapes.handlers import message_handler, edited_message_handler
 from madapes.http_client import close_session
@@ -89,6 +89,10 @@ async def main():
     ctx.display_tz = _display_tz
 
     init_database(MAX_SIGNALS)
+
+    # Backfill missing data on startup
+    backfill_signal_quality()
+    backfill_missing_intelligence()
 
     # Initialize Redis (optional - gracefully degrades if unavailable)
     redis = await get_redis()

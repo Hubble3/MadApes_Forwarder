@@ -24,7 +24,7 @@ from madapes.formatting import (
 from madapes.message_builder import resolve_report_links
 from madapes.services.enrichment_service import enrich_token
 from madapes.services.leaderboard_service import get_caller_leaderboard, get_performance_attribution
-from madapes.services.performance_service import check_signal_price, run_1h_checks, run_6h_checks
+from madapes.services.performance_service import check_signal_price, run_15m_checks, run_1h_checks, run_6h_checks
 from madapes.services.portfolio_service import get_portfolio_summary
 
 logger = logging.getLogger(__name__)
@@ -554,11 +554,25 @@ async def generate_gold_daily_summary():
         logger.error(f"GOLD daily summary failed: {e}")
 
 
+async def check_and_update_signals_15m():
+    """Quick 15-minute check for early momentum detection."""
+    try:
+        early_winners = await run_15m_checks()
+        for signal_row, check_result in early_winners:
+            try:
+                await send_performance_update_to_report(signal_row, check_result, "15m")
+            except Exception as send_err:
+                logger.error(f"Failed to send 15m update for signal {signal_row['id']}: {send_err}")
+    except Exception as e:
+        logger.error(f"Error in 15m check: {e}")
+
+
 async def background_checker():
     """Background task that runs price checks periodically."""
     ctx = app_context
     while True:
         try:
+            await check_and_update_signals_15m()
             await check_and_update_signals_1h()
             await check_and_update_signals_6h()
 

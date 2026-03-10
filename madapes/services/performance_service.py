@@ -3,8 +3,10 @@ import asyncio
 import logging
 
 from db import (
+    get_signals_to_check_15m,
     get_signals_to_check_1h,
     get_signals_to_check_6h,
+    mark_signal_checked_15m,
     mark_signal_checked_1h,
     mark_signal_checked_6h,
     update_signal_performance,
@@ -97,6 +99,53 @@ async def check_signal_price(signal_row) -> dict | None:
         return None
 
 
+async def run_15m_checks() -> list:
+    """Run 15-minute quick checks on all eligible signals.
+    Lighter than 1h — just update price/ATH, open portfolio position for early pumps.
+    Returns list of (signal_row, check_result) for signals already winning.
+    """
+    signals = get_signals_to_check_15m()
+    if not signals:
+        return []
+    logger.info(f"15m check: {len(signals)} signals")
+    early_winners = []
+
+    for signal_row in signals:
+        signal_id = signal_row["id"]
+        check_result = await check_signal_price(signal_row)
+
+        if check_result:
+            # Store 15m snapshot (does NOT change status — that's for 1h)
+            update_signal_performance(signal_id, check_result["current_data"], check_result["is_winner"], time_label="15m")
+            mark_signal_checked_15m(signal_id)
+
+            # Open portfolio position early for tokens already pumping
+            if check_result["is_winner"] and check_result["price_change"] >= 10:
+                current_price = safe_float(check_result["current_data"].get("price"))
+                if current_price:
+                    from madapes.services.portfolio_service import open_position
+                    entry_price = safe_float(signal_row["original_price"]) or current_price
+                    open_position(
+                        signal_id=signal_id,
+                        token_address=signal_row["token_address"] or "",
+                        chain=signal_row["chain"] or "",
+                        entry_price=entry_price,
+                        token_name=signal_row["token_name"] or "",
+                        token_symbol=signal_row["token_symbol"] or "",
+                        sender_id=signal_row["sender_id"],
+                        sender_name=signal_row["sender_name"] or "",
+                    )
+                    update_position(signal_id, current_price)
+                early_winners.append((signal_row, check_result))
+        else:
+            # Still mark as checked even if no data — don't re-check
+            mark_signal_checked_15m(signal_id)
+
+        await asyncio.sleep(0.5)  # Lighter rate limiting for quick check
+
+    return early_winners
+
+
 async def run_1h_checks() -> list:
     """Run 1-hour checks on all eligible signals.
     Returns list of (signal_row, check_result) for winners.
@@ -140,6 +189,18 @@ async def run_1h_checks() -> list:
                 else:
                     # Losers close immediately at 1h - no point waiting
                     close_position(signal_id, current_price)
+
+            # Classify signal quality at 1h mark
+            try:
+                from db import get_signal_by_id, classify_signal_quality, get_connection
+                updated_row = get_signal_by_id(signal_id)
+                if updated_row:
+                    quality = classify_signal_quality(updated_row)
+                    with get_connection() as conn:
+                        conn.execute("UPDATE signals SET signal_quality = ? WHERE id = ?", (quality, signal_id))
+                        conn.commit()
+            except Exception:
+                pass
 
             if is_winner:
                 winners.append((signal_row, check_result))

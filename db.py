@@ -168,6 +168,15 @@ def init_database(max_signals=100):
             ("tp3_hit_at", "TEXT"),
             ("tp4_hit", "INTEGER DEFAULT 0"),
             ("tp4_hit_at", "TEXT"),
+            # 15-minute quick check
+            ("checked_15m", "INTEGER DEFAULT 0"),
+            ("checked_15m_at", "TEXT"),
+            ("price_15m_check", "REAL"),
+            ("market_cap_15m", "REAL"),
+            ("price_change_15m", "REAL"),
+            ("multiplier_15m", "REAL"),
+            # Signal quality classification
+            ("signal_quality", "TEXT"),
         ]
         for col, col_type in strategy_migrations:
             if col not in existing_cols:
@@ -439,6 +448,32 @@ def delete_claim(signal_id):
         logger.error(f"Error deleting claim: {e}")
 
 
+def get_signals_to_check_15m():
+    """Signals needing 15-minute quick check. One per token_address."""
+    with get_connection() as conn:
+        fifteen_min_ago = (utcnow_naive() - timedelta(minutes=15)).isoformat()
+        return conn.execute(
+            """SELECT * FROM signals WHERE id IN (
+                SELECT MIN(id) FROM signals
+                WHERE status = 'active' AND COALESCE(checked_15m, 0) = 0
+                AND checked_1h = 0 AND original_timestamp < ?
+                GROUP BY token_address
+            )""",
+            (fifteen_min_ago,),
+        ).fetchall()
+
+
+def mark_signal_checked_15m(signal_id):
+    """Mark as 15m-checked (all duplicate rows with same token_address)."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT token_address FROM signals WHERE id = ?", (signal_id,)).fetchone()
+        if row and row["token_address"]:
+            conn.execute("UPDATE signals SET checked_15m = 1 WHERE token_address = ?", (row["token_address"],))
+        else:
+            conn.execute("UPDATE signals SET checked_15m = 1 WHERE id = ?", (signal_id,))
+        conn.commit()
+
+
 def get_signals_to_check_1h():
     """Signals needing 1-hour check. One per token_address."""
     with get_connection() as conn:
@@ -555,21 +590,42 @@ def update_signal_performance(signal_id, current_data, is_winner, time_label=Non
 
             status = "win" if is_winner else "loss"
 
-            cursor.execute(
-                """
-                UPDATE signals SET
-                    current_price = ?, current_volume = ?, current_liquidity = ?,
-                    current_market_cap = ?, price_change_percent = ?, multiplier = ?,
-                    status = ?, last_check_timestamp = ?,
-                    max_price_seen = ?, max_price_seen_at = ?, max_market_cap_seen = ?, max_market_cap_seen_at = ?
-                WHERE id = ?
-                """,
-                (current_price, current_volume, current_liquidity, current_market_cap,
-                 price_change_percent, multiplier, status, now_iso,
-                 new_max_price, now_iso, new_max_mc, now_iso, signal_id),
-            )
+            # 15m check: update price/ATH but do NOT change status (stays 'active')
+            if time_label == "15m":
+                cursor.execute(
+                    """
+                    UPDATE signals SET
+                        current_price = ?, current_volume = ?, current_liquidity = ?,
+                        current_market_cap = ?, price_change_percent = ?, multiplier = ?,
+                        last_check_timestamp = ?,
+                        max_price_seen = ?, max_price_seen_at = ?, max_market_cap_seen = ?, max_market_cap_seen_at = ?
+                    WHERE id = ?
+                    """,
+                    (current_price, current_volume, current_liquidity, current_market_cap,
+                     price_change_percent, multiplier, now_iso,
+                     new_max_price, now_iso, new_max_mc, now_iso, signal_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE signals SET
+                        current_price = ?, current_volume = ?, current_liquidity = ?,
+                        current_market_cap = ?, price_change_percent = ?, multiplier = ?,
+                        status = ?, last_check_timestamp = ?,
+                        max_price_seen = ?, max_price_seen_at = ?, max_market_cap_seen = ?, max_market_cap_seen_at = ?
+                    WHERE id = ?
+                    """,
+                    (current_price, current_volume, current_liquidity, current_market_cap,
+                     price_change_percent, multiplier, status, now_iso,
+                     new_max_price, now_iso, new_max_mc, now_iso, signal_id),
+                )
 
-            if time_label == "1h":
+            if time_label == "15m":
+                cursor.execute(
+                    "UPDATE signals SET checked_15m_at = ?, price_15m_check = ?, market_cap_15m = ?, price_change_15m = ?, multiplier_15m = ? WHERE id = ?",
+                    (now_iso, current_price, current_market_cap, price_change_percent, multiplier, signal_id),
+                )
+            elif time_label == "1h":
                 cursor.execute(
                     "UPDATE signals SET checked_1h_at = ?, price_1h = ?, market_cap_1h = ?, price_change_1h = ?, multiplier_1h = ? WHERE id = ?",
                     (now_iso, current_price, current_market_cap, price_change_percent, multiplier, signal_id),
@@ -833,6 +889,72 @@ def is_duplicate_signal(contract_addresses, hours_window=24):
             if row:
                 return True
     return False
+
+
+def backfill_signal_quality():
+    """Backfill signal_quality for signals that don't have it set."""
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM signals WHERE signal_quality IS NULL AND status IN ('win', 'loss')"
+            ).fetchall()
+            if not rows:
+                return 0
+            count = 0
+            for row in rows:
+                quality = classify_signal_quality(row)
+                conn.execute(
+                    "UPDATE signals SET signal_quality = ? WHERE id = ?",
+                    (quality, row["id"]),
+                )
+                count += 1
+            conn.commit()
+            logger.info(f"Backfilled signal_quality for {count} signals")
+            return count
+    except Exception as e:
+        logger.error(f"Error backfilling signal quality: {e}")
+        return 0
+
+
+def backfill_missing_intelligence():
+    """Re-compute confidence scores and tags for signals missing them."""
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM signals WHERE confidence_score IS NULL AND original_price IS NOT NULL"
+            ).fetchall()
+            if not rows:
+                return 0
+
+            from madapes.services.scoring_service import compute_signal_confidence
+            from madapes.services.tagging_service import compute_tags
+
+            count = 0
+            for row in rows:
+                score = compute_signal_confidence(
+                    sender_id=row["sender_id"],
+                    market_cap=row["original_market_cap"],
+                    liquidity=row["original_liquidity"],
+                    chain=row["chain"],
+                    timestamp=row["original_timestamp"],
+                )
+                tags_list = compute_tags(
+                    market_cap=row["original_market_cap"],
+                    liquidity=row["original_liquidity"],
+                    chain=row["chain"],
+                )
+                tags = ",".join(tags_list) if tags_list else None
+                conn.execute(
+                    "UPDATE signals SET confidence_score = ?, tags = ? WHERE id = ?",
+                    (score, tags, row["id"]),
+                )
+                count += 1
+            conn.commit()
+            logger.info(f"Backfilled intelligence for {count} signals")
+            return count
+    except Exception as e:
+        logger.error(f"Error backfilling intelligence: {e}")
+        return 0
 
 
 def save_analytics_daily(report_date, total_signals, win_count, loss_count, active_count, runner_count, best_mc_range=None, best_hour=None, observation=None):

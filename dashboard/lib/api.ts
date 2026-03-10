@@ -60,6 +60,11 @@ export interface Signal {
   tp2_hit_at: string | null;
   tp3_hit_at: string | null;
   tp4_hit_at: string | null;
+  checked_15m: number;
+  price_15m_check: number | null;
+  price_change_15m: number | null;
+  multiplier_15m: number | null;
+  signal_quality: string | null;
 }
 
 export interface LivePrice {
