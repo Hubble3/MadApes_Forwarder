@@ -404,7 +404,8 @@ async def runner_watcher(client, report_destination_entity):
                 lines = ["\u2501" * 32, "\U0001f6a8 <b>EXIT SIGNALS</b>", ""]
                 for entry in exit_entries:
                     lines.append(f"\u2022 {entry}")
-                lines.append("", "\u2501" * 32)
+                lines.append("")
+                lines.append("\u2501" * 32)
                 try:
                     await client.send_message(
                         report_destination_entity, "\n".join(lines),
