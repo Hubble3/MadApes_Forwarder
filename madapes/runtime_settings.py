@@ -53,6 +53,10 @@ def get_min_market_cap() -> float:
     return _get("min_market_cap", config.MIN_MARKET_CAP, float)
 
 
+def get_min_liquidity() -> float:
+    return _get("min_liquidity", config.MIN_LIQUIDITY, float)
+
+
 def get_forward_delay() -> float:
     return _get("forward_delay", config.FORWARD_DELAY, float)
 

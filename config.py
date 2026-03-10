@@ -72,6 +72,11 @@ REDIS_URL = os.getenv('REDIS_URL', '').strip() or None
 # Set to 0 to disable filtering (forward all signals regardless of MC)
 MIN_MARKET_CAP = float(os.getenv('MIN_MARKET_CAP', '0'))
 
+# Minimum liquidity filter (USD) — signals with liquidity below this are skipped
+# Tokens with no/zero liquidity are almost always dead or honeypots
+# Set to 0 to disable filtering
+MIN_LIQUIDITY = float(os.getenv('MIN_LIQUIDITY', '5000'))
+
 # Runner detection (near-real-time momentum alerts)
 RUNNER_VELOCITY_MIN = float(os.getenv('RUNNER_VELOCITY_MIN', '1.5'))   # % per minute
 RUNNER_VOL_ACCEL_MIN = float(os.getenv('RUNNER_VOL_ACCEL_MIN', '1.5'))  # 5m vol vs 24h rate

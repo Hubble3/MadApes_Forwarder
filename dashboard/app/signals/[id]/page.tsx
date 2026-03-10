@@ -105,6 +105,7 @@ export default function SignalDetailPage() {
     { label: 'Confidence', value: s.confidence_score !== null && s.confidence_score !== undefined ? `${s.confidence_score}/100` : 'N/A' },
     { label: 'Tags', value: s.tags || 'None' },
     { label: 'Signal Quality', value: s.signal_quality ? s.signal_quality.toUpperCase() : 'N/A', color: s.signal_quality === 'valuable' ? 'text-emerald-400' : s.signal_quality === 'junk' ? 'text-red-400' : s.signal_quality === 'borderline' ? 'text-yellow-400' : undefined },
+    { label: 'Take-Profit Milestones', value: [s.tp1_hit && '+30%', s.tp2_hit && '+50%', s.tp3_hit && '2x', s.tp4_hit && '3x'].filter(Boolean).join(' → ') || 'None hit', color: (s.tp3_hit || s.tp4_hit) ? 'text-yellow-400' : s.tp1_hit ? 'text-emerald-400' : undefined },
   ];
 
   return (

@@ -12,7 +12,7 @@ from madapes.runtime_settings import (
     get_runner_velocity_min, get_runner_vol_accel_min, get_runner_poll_interval,
     get_runner_exit_drawdown_pct, get_runner_exit_liq_drain_pct, get_runner_dedup_window,
 )
-from db import get_signals_for_runner_check, get_runner_exit_candidates, mark_runner_alerted, mark_exit_alerted, update_max_tracking
+from db import get_signals_for_runner_check, get_runner_exit_candidates, mark_runner_alerted, mark_exit_alerted, update_max_tracking, check_tp_milestones
 from madapes.constants import CHAIN_EMOJI_MAP
 from madapes.event_bus import emit
 from madapes.events import RunnerDetected
@@ -259,6 +259,16 @@ def build_exit_alert_message(signal_row, current_data, reason):
     return "\n".join(lines)
 
 
+def build_tp_alert_line(signal_row, tp_labels, current_price):
+    """Build a single line for the TP milestone summary."""
+    chain_emoji = CHAIN_EMOJI_MAP.get((signal_row["chain"] or "").lower(), "\U0001f48e")
+    token_label = token_display_label(signal_row["token_name"], signal_row["token_symbol"])
+    original_price = safe_float(signal_row["original_price"])
+    gain_pct = ((current_price - original_price) / original_price * 100) if original_price and original_price > 0 else 0
+    tp_text = ", ".join(tp_labels)
+    return f"{chain_emoji} {token_label} hit <b>{tp_text}</b> ({gain_pct:+.0f}% from entry)"
+
+
 async def runner_watcher(client, report_destination_entity):
     """Main loop: poll for runner candidates every poll_interval seconds."""
 
@@ -301,6 +311,7 @@ async def runner_watcher(client, report_destination_entity):
     while True:
         try:
             _cleanup_dedup()
+            _tp_alerts = []
 
             signals = get_signals_for_runner_check()
             if signals:
@@ -321,6 +332,12 @@ async def runner_watcher(client, report_destination_entity):
                     current_price = safe_float(current_data.get("price"))
                     current_mc = safe_float(current_data.get("fdv"))
                     update_max_tracking(signal_id, current_price, current_mc)
+
+                    # Check take-profit milestones
+                    if current_price:
+                        new_tps = check_tp_milestones(signal_id, current_price)
+                        if new_tps:
+                            _tp_alerts.append(build_tp_alert_line(signal_row, new_tps, current_price))
 
                     if is_runner:
                         tier = details.get("tier", "runner")
@@ -387,6 +404,12 @@ async def runner_watcher(client, report_destination_entity):
                     current_mc = safe_float(current_data.get("fdv"))
                     update_max_tracking(signal_id, current_price, current_mc)
 
+                    # Check TPs for exit candidates too
+                    if current_price:
+                        new_tps = check_tp_milestones(signal_id, current_price)
+                        if new_tps:
+                            _tp_alerts.append(build_tp_alert_line(signal_row, new_tps, current_price))
+
                     should_exit, exit_reason = detect_exit_signal(signal_row, current_data)
                     if should_exit:
                         chain_emoji = CHAIN_EMOJI_MAP.get((signal_row["chain"] or "").lower(), "\U0001f48e")
@@ -398,6 +421,21 @@ async def runner_watcher(client, report_destination_entity):
                     logger.error(f"Exit signal check failed for signal {signal_id}: {e}")
 
                 await asyncio.sleep(1.5)
+
+            # Send consolidated TP milestone alerts
+            if _tp_alerts and report_destination_entity:
+                lines = ["\u2501" * 32, "\U0001f3af <b>TAKE-PROFIT MILESTONES</b>", ""]
+                for entry in _tp_alerts:
+                    lines.append(f"\u2022 {entry}")
+                lines.append("")
+                lines.append("\u2501" * 32)
+                try:
+                    await client.send_message(
+                        report_destination_entity, "\n".join(lines),
+                        parse_mode="html", link_preview=False,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send TP alert: {e}")
 
             # Send consolidated exit summary
             if exit_entries and report_destination_entity:

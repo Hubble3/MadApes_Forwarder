@@ -159,6 +159,15 @@ def init_database(max_signals=100):
             ("price_15m", "REAL"),
             ("exit_alerted", "INTEGER DEFAULT 0"),
             ("exit_alerted_at", "TEXT"),
+            # Take-profit milestone tracking
+            ("tp1_hit", "INTEGER DEFAULT 0"),
+            ("tp1_hit_at", "TEXT"),
+            ("tp2_hit", "INTEGER DEFAULT 0"),
+            ("tp2_hit_at", "TEXT"),
+            ("tp3_hit", "INTEGER DEFAULT 0"),
+            ("tp3_hit_at", "TEXT"),
+            ("tp4_hit", "INTEGER DEFAULT 0"),
+            ("tp4_hit_at", "TEXT"),
         ]
         for col, col_type in strategy_migrations:
             if col not in existing_cols:
@@ -632,6 +641,52 @@ def update_max_tracking(signal_id, current_price, current_market_cap):
             conn.commit()
     except Exception as e:
         logger.error(f"Error updating max tracking: {e}")
+
+
+# Take-profit milestone levels: (column_prefix, gain_pct, label)
+TP_LEVELS = [
+    ("tp1", 30, "+30%"),
+    ("tp2", 50, "+50%"),
+    ("tp3", 100, "2x"),
+    ("tp4", 200, "3x"),
+]
+
+
+def check_tp_milestones(signal_id, current_price):
+    """Check if signal hit new take-profit milestones.
+    Returns list of newly hit TP labels (e.g. ['+30%', '2x']).
+    """
+    newly_hit = []
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT original_price, tp1_hit, tp2_hit, tp3_hit, tp4_hit FROM signals WHERE id = ?",
+                (signal_id,),
+            ).fetchone()
+            if not row or not row["original_price"] or row["original_price"] <= 0:
+                return []
+
+            original_price = row["original_price"]
+            if not current_price or current_price <= 0:
+                return []
+
+            gain_pct = ((current_price - original_price) / original_price) * 100
+            now_iso = utcnow_iso()
+
+            for col_prefix, threshold, label in TP_LEVELS:
+                hit_col = f"{col_prefix}_hit"
+                if not row[hit_col] and gain_pct >= threshold:
+                    conn.execute(
+                        f"UPDATE signals SET {hit_col} = 1, {col_prefix}_hit_at = ? WHERE id = ?",
+                        (now_iso, signal_id),
+                    )
+                    newly_hit.append(label)
+
+            if newly_hit:
+                conn.commit()
+    except Exception as e:
+        logger.error(f"Error checking TP milestones: {e}")
+    return newly_hit
 
 
 def classify_signal_quality(signal_row) -> str:

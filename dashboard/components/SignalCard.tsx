@@ -200,6 +200,16 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
         </div>
       )}
 
+      {/* Take-profit milestones */}
+      {(signal.tp1_hit || signal.tp2_hit || signal.tp3_hit || signal.tp4_hit) && (
+        <div className="flex items-center gap-1 mb-2">
+          {signal.tp1_hit ? <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400">+30%</span> : null}
+          {signal.tp2_hit ? <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300">+50%</span> : null}
+          {signal.tp3_hit ? <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-yellow-500/20 text-yellow-400">2x</span> : null}
+          {signal.tp4_hit ? <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-500/20 text-orange-400">3x</span> : null}
+        </div>
+      )}
+
       {/* Momentum badges */}
       {(signal.momentum_check_5m || signal.momentum_check_15m) && (
         <div className="flex items-center gap-1.5 mb-2">

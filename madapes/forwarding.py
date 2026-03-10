@@ -7,7 +7,7 @@ import time
 from telethon.errors import ChatAdminRequiredError
 from telethon.tl.types import Channel
 
-from madapes.runtime_settings import get_forward_delay, get_mc_threshold, get_min_market_cap
+from madapes.runtime_settings import get_forward_delay, get_mc_threshold, get_min_market_cap, get_min_liquidity
 from db import (
     claim_signal_if_new,
     delete_claim,
@@ -149,6 +149,16 @@ async def forward_message(message, chat, sender):
         min_mc = get_min_market_cap()
         if min_mc > 0 and market_cap is not None and market_cap < min_mc:
             logger.info(f"Skipping message {message_id}: MC ${market_cap:,.0f} below min ${min_mc:,.0f}")
+            delete_claim(claim_id)
+            return False
+
+        # Min liquidity filter — skip tokens with no/low liquidity (honeypot/dead token indicator)
+        first_liq = None
+        if dexscreener_data:
+            first_liq = list(dexscreener_data.values())[0].get("liquidity")
+        min_liq = get_min_liquidity()
+        if min_liq > 0 and first_liq is not None and first_liq < min_liq:
+            logger.info(f"Skipping message {message_id}: Liquidity ${first_liq:,.0f} below min ${min_liq:,.0f}")
             delete_claim(claim_id)
             return False
 

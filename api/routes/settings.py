@@ -25,6 +25,7 @@ def _row_to_dict(row):
 
 class SettingsUpdate(BaseModel):
     min_market_cap: Optional[float] = None
+    min_liquidity: Optional[float] = None
     mc_threshold: Optional[float] = None
     forward_delay: Optional[float] = None
     max_signals: Optional[int] = None
@@ -38,6 +39,7 @@ class SettingsUpdate(BaseModel):
 
 SETTINGS_KEYS = {
     "min_market_cap": lambda: str(config.MIN_MARKET_CAP),
+    "min_liquidity": lambda: str(config.MIN_LIQUIDITY),
     "mc_threshold": lambda: str(config.MC_THRESHOLD),
     "forward_delay": lambda: str(config.FORWARD_DELAY),
     "max_signals": lambda: str(config.MAX_SIGNALS),
@@ -66,7 +68,7 @@ def _get_all_settings() -> dict:
     # Parse types for JSON response
     result = {}
     for k, v in settings.items():
-        if k in ("min_market_cap", "mc_threshold", "forward_delay", "runner_velocity_min", "runner_vol_accel_min"):
+        if k in ("min_market_cap", "min_liquidity", "mc_threshold", "forward_delay", "runner_velocity_min", "runner_vol_accel_min"):
             try:
                 result[k] = float(v)
             except (ValueError, TypeError):
