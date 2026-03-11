@@ -127,7 +127,7 @@ export function useOverview() {
   });
 }
 
-export function useSignals(params?: { status?: string; chain?: string; search?: string; tier?: string; sort?: string; order?: string; limit?: number; offset?: number }) {
+export function useSignals(params?: { status?: string; chain?: string; search?: string; tier?: string; quality?: string; sort?: string; order?: string; limit?: number; offset?: number }) {
   return useQuery({
     queryKey: ['signals', params],
     queryFn: () => api.signals.list(params),

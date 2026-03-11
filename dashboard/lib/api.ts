@@ -65,7 +65,6 @@ export interface Signal {
   price_15m_check: number | null;
   price_change_15m: number | null;
   multiplier_15m: number | null;
-  signal_quality: string | null;
 }
 
 export interface LivePrice {
@@ -144,12 +143,13 @@ export const api = {
   botStatus: () => fetchApi<{ online: boolean; seconds_ago: number | null; ws_clients: number; info: any }>('/api/bot-status'),
 
   signals: {
-    list: (params?: { status?: string; chain?: string; search?: string; tier?: string; sort?: string; order?: string; limit?: number; offset?: number }) => {
+    list: (params?: { status?: string; chain?: string; search?: string; tier?: string; quality?: string; sort?: string; order?: string; limit?: number; offset?: number }) => {
       const qs = new URLSearchParams();
       if (params?.status) qs.set('status', params.status);
       if (params?.chain) qs.set('chain', params.chain);
       if (params?.search) qs.set('search', params.search);
       if (params?.tier) qs.set('tier', params.tier);
+      if (params?.quality) qs.set('quality', params.quality);
       if (params?.sort) qs.set('sort', params.sort);
       if (params?.order) qs.set('order', params.order);
       if (params?.limit) qs.set('limit', String(params.limit));
@@ -158,7 +158,7 @@ export const api = {
     },
     recent: (limit = 20) =>
       fetchApi<{ signals: Signal[] }>(`/api/signals/recent?limit=${limit}`),
-    stats: () => fetchApi<{ total: number; active: number; wins: number; losses: number; win_rate: number }>('/api/signals/stats'),
+    stats: () => fetchApi<{ total: number; active: number; wins: number; losses: number; win_rate: number; tp1_count: number; tp2_count: number; tp3_count: number; tp4_count: number; quality_distribution: Record<string, number> }>('/api/signals/stats'),
     get: (id: number) => fetchApi<{ signal: Signal }>(`/api/signals/${id}`),
     livePrices: () =>
       fetchApi<{ prices: Record<string, LivePrice> }>('/api/signals/live-prices'),

@@ -36,24 +36,9 @@ from madapes.services.scoring_service import compute_signal_confidence, confiden
 from madapes.services.strategy_engine import compute_runner_potential, tier_badge
 from madapes.services.message_analyzer import analyze_message
 from madapes.services.tagging_service import compute_tags, tags_display
+from madapes.formatting import entity_label as _entity_label
 
 logger = logging.getLogger(__name__)
-
-
-def _entity_label(entity, fallback="unknown"):
-    if entity is None:
-        return fallback
-    try:
-        if hasattr(entity, "title") and entity.title:
-            return entity.title
-        if hasattr(entity, "username") and entity.username:
-            return f"@{entity.username}"
-        if hasattr(entity, "first_name"):
-            name = f"{entity.first_name or ''} {getattr(entity, 'last_name', '') or ''}".strip()
-            return name or "Saved Messages"
-    except Exception:
-        pass
-    return str(entity)
 
 
 def _message_ids(msgs):

@@ -20,9 +20,10 @@ from config import (
 from db import init_database, backfill_signal_quality, backfill_missing_intelligence
 from madapes.context import app_context
 from madapes.handlers import message_handler, edited_message_handler
+from madapes.formatting import entity_label as _entity_label
 from madapes.http_client import close_session
 from madapes.redis_client import get_redis, close_redis
-from madapes.reports import background_checker
+from madapes.reports import background_checker, live_price_monitor
 from runner import runner_watcher
 from madapes.services.momentum_confirmer import momentum_confirmation_loop
 
@@ -38,22 +39,6 @@ try:
     _display_tz = pytz.timezone(DISPLAY_TIMEZONE)
 except Exception:
     _display_tz = pytz.timezone("America/New_York")
-
-
-def _entity_label(entity, fallback="unknown"):
-    if entity is None:
-        return fallback
-    try:
-        if hasattr(entity, "title") and entity.title:
-            return entity.title
-        if hasattr(entity, "username") and entity.username:
-            return f"@{entity.username}"
-        if hasattr(entity, "first_name"):
-            name = f"{entity.first_name or ''} {getattr(entity, 'last_name', '') or ''}".strip()
-            return name or "Saved Messages"
-    except Exception:
-        pass
-    return str(entity)
 
 
 async def resolve_entity(name, label):
@@ -178,6 +163,7 @@ async def main():
     asyncio.create_task(background_checker())
     asyncio.create_task(runner_watcher(client, ctx.report_destination_entity))
     asyncio.create_task(momentum_confirmation_loop(client, ctx.report_destination_entity))
+    asyncio.create_task(live_price_monitor())
     asyncio.create_task(_heartbeat_loop(len(verified_groups)))
 
     try:

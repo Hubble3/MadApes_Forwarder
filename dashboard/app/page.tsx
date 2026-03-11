@@ -3,7 +3,7 @@ import StatCard from '@/components/StatCard';
 import SignalCard from '@/components/SignalCard';
 import ChainDistribution from '@/components/ChainDistribution';
 import { SkeletonCard, SkeletonSignal } from '@/components/Skeleton';
-import { useOverview, useRecentSignals, usePortfolioSummary, useLivePrices } from '@/lib/hooks';
+import { useOverview, useRecentSignals, usePortfolioSummary, useLivePrices, useSignalStats } from '@/lib/hooks';
 import clsx from 'clsx';
 
 export default function DashboardHome() {
@@ -12,6 +12,7 @@ export default function DashboardHome() {
   const { data: portfolio, isLoading: loadingPortfolio } = usePortfolioSummary();
   const { data: livePriceData } = useLivePrices();
   const livePrices = livePriceData?.prices || {};
+  const { data: stats } = useSignalStats();
 
   return (
     <div className="space-y-8">
@@ -124,6 +125,63 @@ export default function DashboardHome() {
               <span className="text-slate-600">{overview.active} Active</span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* TP Milestones & Quality Distribution */}
+      {stats && (stats.tp1_count > 0 || Object.keys(stats.quality_distribution || {}).length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* TP Milestones */}
+          {stats.tp1_count > 0 && (
+            <div className="bg-dark-700 rounded-xl border border-dark-400/30 p-5">
+              <h2 className="text-sm font-semibold text-slate-300 mb-4">Take-Profit Milestones</h2>
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { label: '+30%', count: stats.tp1_count, bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/20' },
+                  { label: '+50%', count: stats.tp2_count, bg: 'bg-emerald-500/20', text: 'text-emerald-300', border: 'border-emerald-500/25' },
+                  { label: '2x', count: stats.tp3_count, bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/20' },
+                  { label: '3x', count: stats.tp4_count, bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/20' },
+                ].map((tp) => (
+                  <div key={tp.label} className={clsx('rounded-lg border p-3 text-center', tp.bg, tp.border)}>
+                    <p className={clsx('text-lg font-bold font-mono', tp.text)}>{tp.count}</p>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">{tp.label}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-600 mt-3">
+                {stats.tp1_count > 0 ? `${((stats.tp3_count / stats.tp1_count) * 100).toFixed(0)}% of +30% signals reached 2x` : ''}
+              </p>
+            </div>
+          )}
+
+          {/* Quality Distribution */}
+          {stats.quality_distribution && Object.keys(stats.quality_distribution).length > 0 && (
+            <div className="bg-dark-700 rounded-xl border border-dark-400/30 p-5">
+              <h2 className="text-sm font-semibold text-slate-300 mb-4">Signal Quality Distribution</h2>
+              <div className="space-y-3">
+                {[
+                  { key: 'valuable', label: 'Valuable', color: 'bg-emerald-500', text: 'text-emerald-400' },
+                  { key: 'borderline', label: 'Borderline', color: 'bg-yellow-500', text: 'text-yellow-400' },
+                  { key: 'junk', label: 'Junk', color: 'bg-red-500', text: 'text-red-400' },
+                ].map((q) => {
+                  const count = stats.quality_distribution[q.key] || 0;
+                  const totalQ = Object.values(stats.quality_distribution).reduce((a: number, b: number) => a + b, 0);
+                  const pct = totalQ > 0 ? (count / totalQ) * 100 : 0;
+                  return (
+                    <div key={q.key}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={clsx('text-xs font-medium', q.text)}>{q.label}</span>
+                        <span className="text-xs text-slate-500">{count} ({pct.toFixed(0)}%)</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-dark-500 overflow-hidden">
+                        <div className={clsx('h-full rounded-full transition-all duration-700', q.color)} style={{ width: `${pct}%`, opacity: 0.7 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

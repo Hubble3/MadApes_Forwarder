@@ -308,7 +308,7 @@ def build_tp_alert_line(signal_row, tp_labels, current_price):
         advice = "Momentum building — watch for continuation"
 
     # DexScreener link
-    ds_link = signal_row.get("original_dexscreener_link") or ""
+    ds_link = (signal_row["original_dexscreener_link"] if "original_dexscreener_link" in signal_row.keys() else None) or ""
     link_part = f' | <a href="{html.escape(ds_link)}">Chart</a>' if ds_link else ""
 
     line = f"{chain_emoji} <b>{token_label}</b> hit <b>{tp_text}</b> ({gain_pct:+.0f}%)"
@@ -495,7 +495,7 @@ async def runner_watcher(client, report_destination_entity):
                     if not major_tps:
                         continue
                     # Determine which channel the signal was forwarded to
-                    dest_type = sig_row.get("destination_type") or ""
+                    dest_type = (sig_row["destination_type"] if "destination_type" in sig_row.keys() else None) or ""
                     dest_entity = None
                     if "under" in dest_type.lower() or "small" in dest_type.lower():
                         dest_entity = _ctx.destination_entity_under_80k
@@ -509,7 +509,7 @@ async def runner_watcher(client, report_destination_entity):
                     orig_p = safe_float(sig_row["original_price"])
                     gain = ((price - orig_p) / orig_p * 100) if orig_p and orig_p > 0 else 0
                     tp_text = ", ".join(major_tps)
-                    ds_link = sig_row.get("original_dexscreener_link") or ""
+                    ds_link = (sig_row["original_dexscreener_link"] if "original_dexscreener_link" in sig_row.keys() else None) or ""
                     link_part = f'\n\U0001f4ca <a href="{html.escape(ds_link)}">DexScreener</a>' if ds_link else ""
 
                     dest_msg = (
@@ -543,7 +543,7 @@ async def runner_watcher(client, report_destination_entity):
                 # Also send exit alerts to signal destination channels
                 from madapes.context import app_context as _ctx2
                 for sig_row, entry_text in exit_entries:
-                    dest_type = sig_row.get("destination_type") or ""
+                    dest_type = (sig_row["destination_type"] if "destination_type" in sig_row.keys() else None) or ""
                     dest_entity = None
                     if "under" in dest_type.lower() or "small" in dest_type.lower():
                         dest_entity = _ctx2.destination_entity_under_80k
@@ -554,7 +554,7 @@ async def runner_watcher(client, report_destination_entity):
 
                     chain_emoji = CHAIN_EMOJI_MAP.get((sig_row["chain"] or "").lower(), "\U0001f48e")
                     label = token_display_label(sig_row["token_name"], sig_row["token_symbol"])
-                    ds_link = sig_row.get("original_dexscreener_link") or ""
+                    ds_link = (sig_row["original_dexscreener_link"] if "original_dexscreener_link" in sig_row.keys() else None) or ""
                     link_part = f'\n\U0001f4ca <a href="{html.escape(ds_link)}">DexScreener</a>' if ds_link else ""
 
                     dest_msg = (

@@ -867,6 +867,26 @@ def get_signals_count():
         return conn.execute("SELECT COUNT(*) as cnt FROM signals").fetchone()["cnt"]
 
 
+def get_active_signals_for_live_monitor(max_age_hours=48, limit=50):
+    """Get active contract signals for continuous live price monitoring.
+    Returns signals ordered by most recent first, limited to avoid API overload.
+    """
+    with get_connection() as conn:
+        now = utcnow_naive()
+        oldest = (now - timedelta(hours=max_age_hours)).isoformat()
+        return conn.execute(
+            """
+            SELECT * FROM signals
+            WHERE status = 'active' AND token_type = 'contract'
+            AND original_timestamp > ?
+            AND original_price IS NOT NULL AND original_price > 0
+            ORDER BY original_timestamp DESC
+            LIMIT ?
+            """,
+            (oldest, limit),
+        ).fetchall()
+
+
 def is_duplicate_signal(contract_addresses, hours_window=24):
     """Check if any contract was forwarded in the last N hours."""
     if not contract_addresses:

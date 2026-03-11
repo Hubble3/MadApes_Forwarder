@@ -9,12 +9,16 @@ from config import MAX_SIGNALS
 from db import (
     delete_losing_signals,
     enforce_capacity,
+    get_active_signals_for_live_monitor,
     get_all_active_signals,
     get_signals_count,
+    update_max_tracking,
+    check_tp_milestones,
 )
 from madapes.context import app_context
 from madapes.constants import CHAIN_EMOJI_MAP
 from madapes.formatting import (
+    entity_label as _entity_label,
     format_called_time,
     format_currency,
     format_price,
@@ -28,22 +32,6 @@ from madapes.services.performance_service import check_signal_price, run_15m_che
 from madapes.services.portfolio_service import get_portfolio_summary
 
 logger = logging.getLogger(__name__)
-
-
-def _entity_label(entity, fallback="unknown"):
-    if entity is None:
-        return fallback
-    try:
-        if hasattr(entity, "title") and entity.title:
-            return entity.title
-        if hasattr(entity, "username") and entity.username:
-            return f"@{entity.username}"
-        if hasattr(entity, "first_name"):
-            name = f"{entity.first_name or ''} {getattr(entity, 'last_name', '') or ''}".strip()
-            return name or "Saved Messages"
-    except Exception:
-        pass
-    return str(entity)
 
 
 async def send_performance_update_to_report(signal_row, check_result, time_label):
@@ -565,6 +553,98 @@ async def check_and_update_signals_15m():
                 logger.error(f"Failed to send 15m update for signal {signal_row['id']}: {send_err}")
     except Exception as e:
         logger.error(f"Error in 15m check: {e}")
+
+
+async def live_price_monitor():
+    """Continuous live price monitor for all active signals.
+    Runs every 60s — updates ATH/peaks, fires TP alerts, updates portfolio positions.
+    Designed for fast-moving meme coins where 1h check intervals miss pumps/dumps.
+    """
+    from madapes.services.enrichment_service import enrich_token
+    from madapes.services.portfolio_service import update_position
+
+    logger.info("Live price monitor started (60s interval)")
+
+    while True:
+        try:
+            signals = get_active_signals_for_live_monitor(max_age_hours=48, limit=50)
+            if not signals:
+                await asyncio.sleep(60)
+                continue
+
+            # Deduplicate by token_address to avoid redundant API calls
+            unique_tokens: dict[str, list] = {}  # addr -> [signal_rows]
+            for sig in signals:
+                addr = sig["token_address"]
+                if addr not in unique_tokens:
+                    unique_tokens[addr] = []
+                unique_tokens[addr].append(sig)
+
+            updated_count = 0
+            tp_count = 0
+
+            for addr, sig_rows in unique_tokens.items():
+                chain = sig_rows[0]["chain"]
+                try:
+                    data = await enrich_token(chain, addr)
+                    if not data or not data.get("price"):
+                        continue
+
+                    current_price = safe_float(data.get("price"))
+                    current_mc = safe_float(data.get("fdv"))
+
+                    if not current_price:
+                        continue
+
+                    for sig in sig_rows:
+                        signal_id = sig["id"]
+
+                        # Update ATH/peak tracking
+                        update_max_tracking(signal_id, current_price, current_mc)
+
+                        # Check TP milestones
+                        new_tps = check_tp_milestones(signal_id, current_price)
+                        if new_tps:
+                            tp_count += len(new_tps)
+                            # Send TP alert to report channel
+                            ctx = app_context
+                            report_dest = ctx.report_destination_entity
+                            if report_dest:
+                                from runner import build_tp_alert_line
+                                chain_emoji = CHAIN_EMOJI_MAP.get(chain.lower(), "\U0001f48e")
+                                label = token_display_label(sig["token_name"], sig["token_symbol"])
+                                alert_msg = (
+                                    f"\U0001f4b0 <b>LIVE TP ALERT</b>\n\n"
+                                    f"{build_tp_alert_line(sig, new_tps, current_price)}\n"
+                                    f"\u2501" * 20
+                                )
+                                try:
+                                    client = ctx.client
+                                    await client.send_message(report_dest, alert_msg, parse_mode="html", link_preview=False)
+                                except Exception as e:
+                                    logger.debug(f"Failed to send live TP alert: {e}")
+
+                        # Update portfolio position if one exists
+                        try:
+                            update_position(signal_id, current_price)
+                        except Exception:
+                            pass
+
+                        updated_count += 1
+
+                except Exception as e:
+                    logger.debug(f"Live monitor: error fetching {addr[:8]}...: {e}")
+
+                # Small delay between API calls to respect rate limits
+                await asyncio.sleep(1)
+
+            if updated_count > 0:
+                logger.debug(f"Live monitor: updated {updated_count} signals, {tp_count} new TPs")
+
+        except Exception as e:
+            logger.error(f"Live price monitor error: {e}")
+
+        await asyncio.sleep(60)
 
 
 async def background_checker():

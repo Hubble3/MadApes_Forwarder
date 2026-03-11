@@ -19,10 +19,6 @@ SESSION_NAME = os.getenv('SESSION_NAME', 'session')
 SOURCE_GROUPS_STR = os.getenv('SOURCE_GROUPS', '')
 SOURCE_GROUPS = [g.strip() for g in SOURCE_GROUPS_STR.split(',') if g.strip()]
 
-# Legacy support: if SOURCE_GROUP is set, use it
-if not SOURCE_GROUPS and os.getenv('SOURCE_GROUP'):
-    SOURCE_GROUPS = [os.getenv('SOURCE_GROUP')]
-
 # Allowed sender IDs - comma-separated list (e.g., "123456789,987654321,2043323589")
 ALLOWED_USER_IDS_STR = os.getenv('ALLOWED_USER_IDS', '')
 ALLOWED_SENDER_IDS = []
@@ -31,14 +27,6 @@ if ALLOWED_USER_IDS_STR:
         user_id = user_id.strip()
         if user_id and user_id.isdigit():
             ALLOWED_SENDER_IDS.append(int(user_id))
-
-# Legacy support: if individual USER_X_ID variables are set, use them too
-for key in ['USER_A_ID', 'USER_B_ID', 'USER_C_ID', 'USER_PYTHON313_ID']:
-    user_id = os.getenv(key, '0')
-    if user_id and user_id != '0' and user_id.isdigit():
-        user_id_int = int(user_id)
-        if user_id_int not in ALLOWED_SENDER_IDS:
-            ALLOWED_SENDER_IDS.append(user_id_int)
 
 # Dual destinations based on market cap threshold
 # MC < threshold → DESTINATION_UNDER_80K
@@ -54,10 +42,6 @@ MAX_SIGNALS = int(os.getenv('MAX_SIGNALS', '100'))
 
 # Report destination (required for daily report + 1h/6h updates).
 REPORT_DESTINATION = os.getenv('REPORT_DESTINATION', '').strip() or None
-
-# Legacy support: if DESTINATION is set, use it as DESTINATION_80K_OR_MORE
-if os.getenv('DESTINATION') and not os.getenv('DESTINATION_80K_OR_MORE'):
-    DESTINATION_80K_OR_MORE = os.getenv('DESTINATION')
 
 # Delay between forwards (seconds) - human-like behavior
 FORWARD_DELAY = float(os.getenv('FORWARD_DELAY', '1.0'))

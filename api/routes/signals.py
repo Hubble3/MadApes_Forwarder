@@ -48,6 +48,7 @@ async def list_signals(
     chain: Optional[str] = Query(None),
     sender_id: Optional[int] = Query(None),
     tier: Optional[str] = Query(None, description="Filter by signal tier: gold, silver, bronze"),
+    quality: Optional[str] = Query(None, description="Filter by signal quality: valuable, borderline, junk"),
     search: Optional[str] = Query(None, description="Search by token name, symbol, or address"),
     sort: Optional[str] = Query(None, description="Sort by: date, pnl, multiplier, market_cap, confidence, runner_potential"),
     order: Optional[str] = Query("desc", description="Sort order: asc or desc"),
@@ -77,6 +78,9 @@ async def list_signals(
             query += " AND (token_name LIKE ? OR token_symbol LIKE ? OR token_address LIKE ?)"
             term = f"%{search}%"
             params.extend([term, term, term])
+        if quality:
+            query += " AND signal_quality = ?"
+            params.append(quality.lower())
 
         # Sorting
         sort_col = _SORT_COLUMNS.get(sort, "original_timestamp")
@@ -122,7 +126,16 @@ async def signal_stats(api_key: str = Depends(verify_api_key)):
         active = conn.execute(base + " AND status='active'", mc_params).fetchone()["cnt"]
         wins = conn.execute(base + " AND status='win'", mc_params).fetchone()["cnt"]
         losses = conn.execute(base + " AND status='loss'", mc_params).fetchone()["cnt"]
+        tp1 = conn.execute(base + " AND tp1_hit=1", mc_params).fetchone()["cnt"]
+        tp2 = conn.execute(base + " AND tp2_hit=1", mc_params).fetchone()["cnt"]
+        tp3 = conn.execute(base + " AND tp3_hit=1", mc_params).fetchone()["cnt"]
+        tp4 = conn.execute(base + " AND tp4_hit=1", mc_params).fetchone()["cnt"]
+        quality_rows = conn.execute(
+            "SELECT signal_quality, COUNT(*) as cnt FROM signals WHERE 1=1" + mc_clause + " AND signal_quality IS NOT NULL GROUP BY signal_quality",
+            mc_params,
+        ).fetchall()
     checked = wins + losses
+    quality_dist = {r["signal_quality"]: r["cnt"] for r in quality_rows}
     return {
         "total": total,
         "active": active,
@@ -130,6 +143,11 @@ async def signal_stats(api_key: str = Depends(verify_api_key)):
         "losses": losses,
         "checked": checked,
         "win_rate": round((wins / checked * 100) if checked > 0 else 0, 1),
+        "tp1_count": tp1,
+        "tp2_count": tp2,
+        "tp3_count": tp3,
+        "tp4_count": tp4,
+        "quality_distribution": quality_dist,
     }
 
 

@@ -235,9 +235,18 @@ export default function SignalCard({ signal, livePrice }: SignalCardProps) {
 
       {/* Footer */}
       <div className="flex items-center justify-between pt-2 border-t border-dark-400/30">
-        <span className="text-[11px] text-slate-600">
-          {signal.sender_name} &middot; {timeAgo(signal.original_timestamp)}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-slate-600">
+            {signal.sender_name} &middot; {timeAgo(signal.original_timestamp)}
+          </span>
+          {signal.confidence_score !== null && signal.confidence_score !== undefined && (
+            <span className={clsx('text-[10px] font-mono font-bold',
+              signal.confidence_score >= 50 ? 'text-emerald-500' : signal.confidence_score >= 35 ? 'text-yellow-500' : 'text-red-500'
+            )}>
+              {signal.confidence_score.toFixed(0)}
+            </span>
+          )}
+        </div>
         {pnl !== null && (
           <span
             className={clsx(

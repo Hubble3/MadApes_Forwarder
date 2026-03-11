@@ -5,6 +5,23 @@ from datetime import datetime
 from madapes.constants import CHAIN_EMOJI_MAP
 
 
+def entity_label(entity, fallback="unknown"):
+    """Convert a Telegram entity to a readable label (title/username/name)."""
+    if entity is None:
+        return fallback
+    try:
+        if hasattr(entity, "title") and entity.title:
+            return entity.title
+        if hasattr(entity, "username") and entity.username:
+            return f"@{entity.username}"
+        if hasattr(entity, "first_name"):
+            name = f"{entity.first_name or ''} {getattr(entity, 'last_name', '') or ''}".strip()
+            return name or "Saved Messages"
+    except Exception:
+        pass
+    return str(entity)
+
+
 def safe_float(v, default=None):
     if v is None:
         return default

@@ -27,6 +27,13 @@ const tierFilters = [
   { key: 'bronze', label: 'BRONZE' },
 ];
 
+const qualityFilters = [
+  { key: '', label: 'All Quality' },
+  { key: 'valuable', label: 'VALUABLE' },
+  { key: 'borderline', label: 'BORDERLINE' },
+  { key: 'junk', label: 'JUNK' },
+];
+
 const sortOptions = [
   { key: 'date', label: 'Date' },
   { key: 'pnl', label: 'P&L %' },
@@ -42,6 +49,7 @@ export default function SignalsPage() {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [tier, setTier] = useState('');
+  const [quality, setQuality] = useState('');
   const [sort, setSort] = useState('date');
   const [order, setOrder] = useState<'desc' | 'asc'>('desc');
   const [page, setPage] = useState(1);
@@ -52,13 +60,14 @@ export default function SignalsPage() {
     chain: chain || undefined,
     search: search || undefined,
     tier: tier || undefined,
+    quality: quality || undefined,
     sort,
     order,
     limit,
     offset: (page - 1) * limit,
   });
 
-  useEffect(() => { setPage(1); }, [status, chain, search, tier, sort, order]);
+  useEffect(() => { setPage(1); }, [status, chain, search, tier, quality, sort, order]);
 
   const { data: livePriceData } = useLivePrices();
   const livePrices = livePriceData?.prices || {};
@@ -155,6 +164,23 @@ export default function SignalsPage() {
           )}
         >
           {tierFilters.map((f) => (
+            <option key={f.key} value={f.key}>{f.label}</option>
+          ))}
+        </select>
+
+        {/* Quality filter */}
+        <select
+          value={quality}
+          onChange={(e) => setQuality(e.target.value)}
+          className={clsx(
+            'bg-dark-700 border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500/50 appearance-none cursor-pointer',
+            quality === 'valuable' ? 'border-emerald-500/50 text-emerald-400' :
+            quality === 'junk' ? 'border-red-500/50 text-red-400' :
+            quality === 'borderline' ? 'border-yellow-500/50 text-yellow-400' :
+            'border-dark-400/30 text-slate-300'
+          )}
+        >
+          {qualityFilters.map((f) => (
             <option key={f.key} value={f.key}>{f.label}</option>
           ))}
         </select>
